@@ -1,0 +1,133 @@
+# =============================================================================
+# config.yaml - FUENTE UNICA DE VERDAD del pipeline de feature selection
+# -----------------------------------------------------------------------------
+# Los nombres de target / id / tiempo se definen SOLO aqui. Ningun modulo del
+# proyecto los tiene escritos a mano: todos los leen del objeto de
+# configuracion. Cambie los tres valores del bloque `entradas` y el pipeline
+# completo (diagnostico, univariado, bivariado, multivariado, Boruta, Excel y
+# hasta el generador de datos de demostracion) se adapta automaticamente.
+#
+# Precedencia:  defaults del codigo  <  este archivo  <  flags de linea de comandos
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# A. ENTRADAS OBLIGATORIAS
+# -----------------------------------------------------------------------------
+entradas:
+  ruta_dataset: "data/panel_sintetico.csv"
+  columna_target: "target"          # <- cambie aqui el nombre de su target
+  columna_id: "id_entidad"          # <- identificador de entidad del panel
+  columna_tiempo: "periodo"         # <- dimension temporal del panel
+  usar_boruta: true
+  ruta_salida_excel: "outputs/bitacora_feature_selection.xlsx"
+
+  # Columnas que deben ignorarse sin evaluarse (llaves secundarias, auditoria...)
+  columnas_excluidas: []
+
+  # Dataset "listo para modelar": id + tiempo + target + solo las variables que
+  # superaron las tres fases obligatorias (univariada, bivariada, multivariada).
+  # Se exporta ADEMAS del Excel de bitacora, no en su lugar.
+  exportar_dataset_final: true
+  ruta_dataset_final: ""            # "" -> se deriva junto a ruta_salida_excel
+  formato_dataset_final: "csv"      # "csv" | "parquet"
+
+# -----------------------------------------------------------------------------
+# B. FASE 1 - UNIVARIADO
+# -----------------------------------------------------------------------------
+univariado:
+  # 1.1 Exceso de ceros + nulos
+  umbral_ceros_nulos: 0.95          # criterio principal (95%)
+  umbral_ceros_nulos_alterno: 0.90  # criterio conservador alterno (90%)
+  usar_umbral_alterno: false        # true -> aplica el umbral de 90%
+
+  # 1.2 Baja variacion
+  umbral_std_minimo: 0.00000001     # 1e-8  -> practicamente constante
+  umbral_cv_minimo: 0.0001          # 1e-4  -> dispersion relativa despreciable
+  umbral_dominancia: 0.99           # una sola categoria cubre >=99% de la muestra
+  umbral_iqr_minimo: 0.0            # IQR <= 0 -> percentiles comprimidos
+  minimo_valores_unicos: 2
+
+# -----------------------------------------------------------------------------
+# C. FASE 2 - BIVARIADO (Information Value y Gini)
+# -----------------------------------------------------------------------------
+bivariado:
+  n_bins: 10                        # bins objetivo por cuantiles para WOE/IV
+  min_prop_bin: 0.03                # >=3% de la muestra por bin (estabilidad del WOE)
+  max_categorias: 50                # cardinalidad maxima; el resto va a "OTROS"
+  correccion_woe: 0.5               # correccion de Haldane-Anscombe (evita log(0))
+
+  peso_gini: 0.50                   # ponderacion balanceada por defecto
+  peso_iv: 0.50
+  metodo_normalizacion: "minmax"    # "minmax" | "rank"
+
+  umbral_iv_minimo: 0.02            # IV < 0.02  -> sin poder predictivo (Siddiqi)
+  umbral_gini_minimo: 0.05          # Gini < 0.05 -> discriminacion despreciable
+  umbral_score_minimo: 0.0          # piso sobre el score compuesto (0 = inactivo)
+
+  # Piso de ruido: umbral adaptativo que depende del tamano muestral y del
+  # numero de bins. Una variable aleatoria obtiene IV > 0 solo por azar; este
+  # piso mide cuanto. El umbral efectivo = max(umbral fijo, piso de ruido).
+  usar_piso_ruido: true
+  alpha_ruido: 0.01                 # significancia del contraste contra el azar
+  bonferroni_ruido: false           # true -> corrige por n de variables evaluadas
+  umbral_iv_sospechoso: 0.60        # IV > 0.60 -> posible fuga de informacion
+  excluir_sospecha_fuga: true       # true -> ademas de marcar, elimina
+  top_n_bivariado: 0                # >0 -> conserva solo las N mejores
+
+  umbral_psi: 0.25                  # estabilidad temporal (especifico de panel)
+  excluir_por_inestabilidad: false
+
+# -----------------------------------------------------------------------------
+# C2. FASE 2 ALTERNATIVA - RELEVANCIA NO SUPERVISADA (fallback sin target)
+# -----------------------------------------------------------------------------
+# Se activa SOLO si columna_target no existe en el dataset cargado. Reemplaza
+# IV/Gini (exigen etiqueta) por Laplacian Score + dispersion robusta, pensado
+# para alimentar Isolation Forest o un autoencoder variacional (VAE). Boruta
+# no se ejecuta en este modo (exige target). Ver docs/documentacion.html.
+no_supervisado:
+  laplacian_k_vecinos: 10           # vecinos del grafo k-NN (He, Cai y Niyogi, 2005)
+  laplacian_max_filas: 20000        # submuestreo del grafo (0 = sin limite)
+  laplacian_n_permutaciones: 200    # resolucion del p-valor = 1/n; 200 -> resolucion 0.005
+  alpha_ruido_laplaciano: 0.05      # significancia del contraste contra el azar
+  bonferroni_ruido_laplaciano: false # true -> corrige por n de variables evaluadas
+  peso_laplaciano: 0.50             # ponderacion balanceada por defecto
+  peso_dispersion: 0.50
+  top_n_no_supervisado: 0           # >0 -> conserva solo las N mejores
+
+# -----------------------------------------------------------------------------
+# D. FASE 3 - MULTIVARIADO
+# -----------------------------------------------------------------------------
+multivariado:
+  umbral_correlacion: 0.90          # |asociacion| > 0.90 -> redundancia
+  metodo_correlacion: "spearman"    # "spearman" (robusto) | "pearson"
+  umbral_vif: 10.0                  # VIF > 10 -> multicolinealidad severa
+  excluir_por_vif: false            # por defecto informativo, no eliminatorio
+
+# -----------------------------------------------------------------------------
+# E. FASE 4 - BORUTA (opcional)
+# -----------------------------------------------------------------------------
+boruta:
+  motor_boruta: "auto"              # auto | borutapy | borutashap | nativo
+  boruta_n_estimadores: 200
+  boruta_max_iter: 60
+  boruta_alpha: 0.05                # nivel de significancia del test binomial
+  boruta_profundidad_max: 6
+  boruta_max_filas: 100000          # submuestreo para acotar costo (0 = sin limite)
+
+# -----------------------------------------------------------------------------
+# F. EJECUCION
+# -----------------------------------------------------------------------------
+ejecucion:
+  semilla: 42                       # reproducibilidad
+  n_jobs: -1
+  autoinstalar_dependencias: true
+  ruta_log: "outputs/featsel.log"
+  nivel_log: "INFO"                 # DEBUG | INFO | WARNING | ERROR
+  csv_sep: ","
+  csv_encoding: "utf-8"
+  generar_demo_si_falta: true       # genera el panel sintetico SOLO si la carpeta de datos
+                                     # esta vacia (arranque en limpio). Si la carpeta ya tiene
+                                     # archivos y ruta_dataset no aparece, el pipeline se
+                                     # detiene con error en vez de generar datos falsos.
+                                     # Poner en false para desactivar el auto-generado del todo
+                                     # (ej. entornos sellados / produccion).

@@ -1,0 +1,27 @@
+# =============================================================================
+# Dependencias del proyecto "FeatureSelection - Panel"
+# -----------------------------------------------------------------------------
+# Se declaran versiones MINIMAS (>=) y no fijadas (==) de forma deliberada:
+# el requisito del proyecto es utilizar SIEMPRE la version mas reciente y
+# estable disponible de cada libreria. El modulo `src/featsel/bootstrap.py`
+# resuelve e instala automaticamente lo que falte en tiempo de ejecucion.
+# =============================================================================
+
+# --- Nucleo obligatorio (sin estas librerias el pipeline no puede correr) ----
+pandas>=2.2
+numpy>=1.26
+scipy>=1.12
+scikit-learn>=1.5
+openpyxl>=3.1          # motor de escritura del Excel de bitacora
+
+# --- Soporte / calidad de vida (opcionales, el pipeline degrada con gracia) --
+PyYAML>=6.0            # lectura de config.yaml (fallback: defaults del codigo)
+joblib>=1.4            # paralelismo de scikit-learn
+pyarrow>=16.0          # lectura de datasets .parquet / .feather
+
+# --- Fase 4 opcional: Boruta / BorutaShap -----------------------------------
+# Si no se pueden instalar, el pipeline usa la implementacion nativa incluida
+# en `src/featsel/fase4_boruta.py` (algoritmo Boruta con shadow features).
+Boruta>=0.4.3
+BorutaShap>=1.0.16
+shap>=0.46

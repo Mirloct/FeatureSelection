@@ -1,0 +1,3027 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature Selection para Datos de Panel — Documentación Técnica</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-alt:#f6f8fa; --bg-code:#f0f3f6; --fg:#1a1f26; --fg-soft:#5a6472;
+    --line:#dfe3e8; --accent:#1f3864; --accent-soft:#2e5c8a; --ok:#1a7f4b; --warn:#a06a00;
+    --bad:#b3261e; --mark:#fff3cd; --shadow:0 1px 3px rgba(0,0,0,.07);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1419; --bg-alt:#161c23; --bg-code:#1b2530; --fg:#e3e8ef; --fg-soft:#9aa6b6;
+      --line:#2a333d; --accent:#7aa5e0; --accent-soft:#9dc0f0; --ok:#4ec98a; --warn:#e0b050;
+      --bad:#f08a80; --mark:#3a3218; --shadow:0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#ffffff; --bg-alt:#f6f8fa; --bg-code:#f0f3f6; --fg:#1a1f26; --fg-soft:#5a6472;
+    --line:#dfe3e8; --accent:#1f3864; --accent-soft:#2e5c8a; --ok:#1a7f4b; --warn:#a06a00;
+    --bad:#b3261e; --mark:#fff3cd; --shadow:0 1px 3px rgba(0,0,0,.07);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1419; --bg-alt:#161c23; --bg-code:#1b2530; --fg:#e3e8ef; --fg-soft:#9aa6b6;
+    --line:#2a333d; --accent:#7aa5e0; --accent-soft:#9dc0f0; --ok:#4ec98a; --warn:#e0b050;
+    --bad:#f08a80; --mark:#3a3218; --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px 96px;display:grid;grid-template-columns:250px 1fr;gap:48px}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr;gap:0;padding:0 16px 64px}}
+
+  /* ---------- Cabecera ---------- */
+  header{
+    background:linear-gradient(135deg,var(--accent) 0%, var(--accent-soft) 100%);
+    color:#fff;padding:52px 24px 44px;margin-bottom:40px
+  }
+  header .inner{max-width:1180px;margin:0 auto}
+  header h1{margin:0 0 8px;font-size:2.1rem;line-height:1.2;font-weight:700;letter-spacing:-.02em}
+  header p{margin:0;opacity:.93;font-size:1.05rem;max-width:70ch}
+  .badges{margin-top:22px;display:flex;flex-wrap:wrap;gap:8px}
+  .badge{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
+    padding:4px 11px;border-radius:20px;font-size:.8rem;font-weight:500}
+
+  /* ---------- Navegación ---------- */
+  nav{position:sticky;top:20px;align-self:start;max-height:calc(100vh - 40px);overflow-y:auto;
+    font-size:.87rem;padding-bottom:20px}
+  @media(max-width:900px){nav{position:static;max-height:none;border-bottom:1px solid var(--line);
+    margin-bottom:28px}}
+  nav h4{margin:0 0 10px;font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--fg-soft)}
+  nav ol{list-style:none;margin:0;padding:0;counter-reset:s}
+  nav ol li{margin:0}
+  nav a{display:block;padding:5px 10px;color:var(--fg-soft);text-decoration:none;
+    border-left:2px solid transparent;border-radius:0 4px 4px 0;transition:.12s}
+  nav a:hover{color:var(--accent);background:var(--bg-alt);border-left-color:var(--accent)}
+  nav .sub a{padding-left:24px;font-size:.83rem}
+
+  /* ---------- Contenido ---------- */
+  main{min-width:0}
+  section{scroll-margin-top:24px;margin-bottom:56px}
+  h2{font-size:1.55rem;margin:0 0 6px;padding-bottom:10px;border-bottom:2px solid var(--line);
+    letter-spacing:-.015em;color:var(--accent)}
+  h3{font-size:1.15rem;margin:32px 0 10px;color:var(--fg)}
+  h4{font-size:1rem;margin:22px 0 8px;color:var(--fg-soft);font-weight:650}
+  p{margin:0 0 14px}
+  ul,ol{margin:0 0 14px;padding-left:22px}
+  li{margin:5px 0}
+  a{color:var(--accent)}
+  code{background:var(--bg-code);padding:1.5px 6px;border-radius:4px;
+    font:.88em/1.5 ui-monospace,SFMono-Regular,"Cascadia Code",Consolas,monospace}
+  pre{background:var(--bg-code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+    overflow-x:auto;margin:0 0 16px;box-shadow:var(--shadow)}
+  pre code{background:none;padding:0;font-size:.85rem;line-height:1.55}
+
+  .formula{background:var(--bg-alt);border-left:3px solid var(--accent);padding:16px 20px;
+    margin:16px 0;border-radius:0 8px 8px 0;font:1.02rem/1.9 ui-monospace,SFMono-Regular,Consolas,monospace;
+    overflow-x:auto}
+  .formula .note{display:block;font:.83rem/1.5 inherit;font-family:inherit;color:var(--fg-soft);margin-top:8px}
+
+  .callout{border-radius:8px;padding:14px 18px;margin:18px 0;border:1px solid var(--line);
+    background:var(--bg-alt);box-shadow:var(--shadow)}
+  .callout strong:first-child{display:block;margin-bottom:5px;font-size:.79rem;
+    text-transform:uppercase;letter-spacing:.06em}
+  .callout.why{border-left:4px solid var(--accent)}
+  .callout.why strong:first-child{color:var(--accent)}
+  .callout.warn{border-left:4px solid var(--warn)}
+  .callout.warn strong:first-child{color:var(--warn)}
+  .callout.ok{border-left:4px solid var(--ok)}
+  .callout.ok strong:first-child{color:var(--ok)}
+  .callout.bad{border-left:4px solid var(--bad)}
+  .callout.bad strong:first-child{color:var(--bad)}
+
+  .tablewrap{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:8px;
+    box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:.89rem;min-width:520px}
+  th{background:var(--accent);color:#fff;text-align:left;padding:9px 13px;font-weight:600;
+    font-size:.82rem;position:sticky;top:0}
+  td{padding:8px 13px;border-top:1px solid var(--line);vertical-align:top}
+  tbody tr:nth-child(even){background:var(--bg-alt)}
+  td code{white-space:nowrap}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .ok-t{color:var(--ok);font-weight:600}
+  .bad-t{color:var(--bad);font-weight:600}
+  .warn-t{color:var(--warn);font-weight:600}
+  mark{background:var(--mark);color:var(--fg);padding:1px 4px;border-radius:3px}
+
+  .pipeline{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:20px 0}
+  .stage{flex:1 1 165px;background:var(--bg-alt);border:1px solid var(--line);border-radius:8px;
+    padding:13px 15px;box-shadow:var(--shadow)}
+  .stage .n{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);font-weight:700}
+  .stage .t{font-weight:650;margin:3px 0 5px;font-size:.95rem}
+  .stage .d{font-size:.8rem;color:var(--fg-soft);line-height:1.5}
+
+  footer{border-top:1px solid var(--line);margin-top:56px;padding-top:22px;
+    font-size:.85rem;color:var(--fg-soft)}
+  .toggle{position:fixed;bottom:22px;right:22px;background:var(--accent);color:#fff;border:none;
+    border-radius:50%;width:44px;height:44px;font-size:1.15rem;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.28);z-index:99}
+</style>
+</head>
+<body>
+
+<button class="toggle" id="tt" title="Cambiar tema">◐</button>
+
+<header>
+  <div class="inner">
+    <h1>Feature Selection para Datos de Panel</h1>
+    <p>Documentación técnica y estadística del pipeline de selección de variables:
+       definiciones formales, derivaciones, criterios de decisión y el razonamiento
+       detrás de cada elección de diseño.</p>
+    <div class="badges">
+      <span class="badge">Python 3.13</span>
+      <span class="badge">4 fases + diagnóstico</span>
+      <span class="badge">Bitácora Excel de 19 hojas</span>
+      <span class="badge">Panel entidad × tiempo</span>
+      <span class="badge">Boruta opcional</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav>
+  <h4>Contenido</h4>
+  <ol>
+    <li><a href="#estado-arte">1 · Evolución histórica y estado del arte</a>
+      <ol class="sub" style="list-style:none;padding:0">
+        <li><a href="#eda-sota">1.1 ¿WOE fue alguna vez SOTA?</a></li>
+        <li><a href="#eda-razones">1.2 Razones de su adopción</a></li>
+        <li><a href="#eda-problemas">1.3 Qué problemas resolvía mejor</a></li>
+        <li><a href="#eda-evidencia">1.4 Evidencia regulatoria e industrial</a></li>
+        <li><a href="#eda-tecnicas">1.5 Técnicas que la sucedieron</a></li>
+        <li><a href="#eda-consistencia">1.6 ¿Consistente o dependiente del contexto?</a></li>
+        <li><a href="#eda-linea-tiempo">1.7 Línea de tiempo</a></li>
+        <li><a href="#eda-consenso">1.8 Consenso actual</a></li>
+      </ol>
+    </li>
+    <li><a href="#binning-profundo">2 · Binning para WOE: investigación exhaustiva</a>
+      <ol class="sub" style="list-style:none;padding:0">
+        <li><a href="#bp-fundamentos">2.1 Fundamentos del binning</a></li>
+        <li><a href="#bp-construccion">2.2 Construcción de los bins</a></li>
+        <li><a href="#bp-metodos">2.3 Métodos para generar bins</a></li>
+        <li><a href="#bp-criterios-corte">2.4 Cómo decide un algoritmo dónde cortar</a></li>
+        <li><a href="#bp-restricciones">2.5 Restricciones de un buen binning</a></li>
+        <li><a href="#bp-ejemplo">2.6 Ejemplo completo</a></li>
+        <li><a href="#bp-recomendaciones">2.7 Recomendaciones actuales</a></li>
+        <li><a href="#bp-debate">2.8 El debate actual: ¿binning sí o no?</a></li>
+      </ol>
+    </li>
+    <li><a href="#contexto">3 · Contexto del proyecto</a></li>
+    <li><a href="#panel">4 · Por qué panel importa</a></li>
+    <li><a href="#arquitectura">5 · Arquitectura</a></li>
+    <li><a href="#bootstrap">6 · Arranque y dependencias</a></li>
+    <li><a href="#config">7 · Configuración transversal</a></li>
+    <li><a href="#validacion">8 · Validación de integridad</a></li>
+    <li><a href="#fase0">9 · Fase 0 · Diagnóstico</a></li>
+    <li><a href="#fase1">10 · Fase 1 · Univariado</a></li>
+    <li><a href="#estadistica">11 · Estadística: WOE, IV, Gini</a>
+      <ol class="sub" style="list-style:none;padding:0">
+        <li><a href="#binning">11.1 Discretización</a></li>
+        <li><a href="#woe">11.2 Weight of Evidence</a></li>
+        <li><a href="#iv">11.3 Information Value</a></li>
+        <li><a href="#gini">11.4 Gini y AUC</a></li>
+        <li><a href="#score">11.5 Score compuesto</a></li>
+        <li><a href="#ruido">11.6 Piso de ruido</a></li>
+      </ol>
+    </li>
+    <li><a href="#fase2">12 · Fase 2 · Bivariado</a></li>
+    <li><a href="#asociacion">13 · Medidas de asociación</a></li>
+    <li><a href="#fase3">14 · Fase 3 · Multivariado</a></li>
+    <li><a href="#fase4">15 · Fase 4 · Boruta</a></li>
+    <li><a href="#estabilidad">16 · Estabilidad temporal</a></li>
+    <li><a href="#excel">17 · La bitácora Excel</a></li>
+    <li><a href="#dataset-final">18 · Dataset final exportado</a></li>
+    <li><a href="#no-supervisado">19 · Selección no supervisada (fallback sin target)</a>
+      <ol class="sub" style="list-style:none;padding:0">
+        <li><a href="#ns-fork">19.1 El fork: cuándo y por qué</a></li>
+        <li><a href="#ns-laplaciano">19.2 Laplacian Score</a></li>
+        <li><a href="#ns-circularidad">19.3 La corrección leave-one-out</a></li>
+        <li><a href="#ns-dispersion">19.4 Dispersión robusta y entropía</a></li>
+        <li><a href="#ns-redundancia">19.5 Por qué la redundancia importa más aquí</a></li>
+        <li><a href="#ns-alternativas">19.6 Alternativas consideradas</a></li>
+        <li><a href="#ns-validacion">19.7 Validación empírica</a></li>
+        <li><a href="#ns-config">19.8 Configuración y recomendaciones</a></li>
+      </ol>
+    </li>
+    <li><a href="#verificacion">20 · Verificación empírica (rama supervisada)</a></li>
+    <li><a href="#limitaciones">21 · Limitaciones</a></li>
+    <li><a href="#glosario">22 · Glosario</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ================================================================= -->
+<section id="estado-arte">
+<h2>1 · Evolución histórica y estado del arte</h2>
+
+<p>Este proyecto usa <strong>Weight of Evidence (WOE)</strong> e <strong>Information
+Value (IV)</strong> como columna vertebral de la fase bivariada. Antes de justificar
+esa elección con argumentos de autoridad ("es lo que se usa en la industria"), vale
+la pena examinar la hipótesis con evidencia: WOE no nació siendo la técnica que es
+hoy, y no es la única disponible. Esta sección reconstruye <strong>cuándo</strong>
+WOE llegó a ser considerado estado del arte (SOTA), <strong>por qué</strong>, y
+<strong>qué le ha pasado desde entonces</strong> — con las fuentes que sustentan
+cada afirmación, para que puedan verificarse de forma independiente.</p>
+
+<div class="callout why">
+<strong>Metodología de esta sección</strong>
+Se plantea la hipótesis ("WOE fue SOTA en algún momento del credit scoring") y se
+contrasta con la línea histórica documentada: quién la introdujo, qué problema
+resolvía, qué la reemplazó parcialmente, y en qué escenarios sigue siendo la
+opción correcta hoy. Las referencias citadas son trabajos reales y verificables
+(autor, año, venue); donde la magnitud exacta de una mejora reportada en la
+literatura no admite una cifra única, se describe direccionalmente en vez de
+inventar una precisión que la evidencia no sostiene.
+</div>
+
+<h3 id="eda-sota">1.1 ¿WOE fue alguna vez una técnica SOTA? ¿En qué período?</h3>
+
+<h4>Explicación técnica</h4>
+<p>Sí, con una precisión importante: WOE en sí mismo no es un algoritmo de
+clasificación, sino una <strong>transformación de variables</strong>. Lo que fue
+SOTA fue el <strong>paradigma completo</strong> del que WOE es la pieza central:
+discretizar cada predictor, transformarlo a WOE, y ajustar una
+<strong>regresión logística</strong> sobre esas variables transformadas — el
+"scorecard" clásico de la industria crediticia.</p>
+
+<p>La línea histórica documentada:</p>
+<ul>
+  <li><strong>1936</strong> — Fisher publica el Análisis Discriminante Lineal
+      (LDA), la base estadística que Durand adaptaría al crédito.</li>
+  <li><strong>1941</strong> — David Durand, en <em>"Risk Elements in Consumer
+      Instalment Financing"</em> (National Bureau of Economic Research), aplica
+      por primera vez clasificación estadística formal al riesgo de crédito al
+      consumo. Es el origen documentado del credit scoring estadístico.</li>
+  <li><strong>1956</strong> — Bill Fair y Earl Isaac fundan Fair, Isaac and
+      Company (FICO), la primera empresa dedicada a scoring crediticio comercial.</li>
+  <li><strong>Años 70-80</strong> — La regresión logística desplaza al análisis
+      discriminante de Fisher como técnica dominante: no exige que los
+      predictores sigan una normal multivariada con igual matriz de covarianzas
+      entre clases, un supuesto que los datos de buró de crédito (mezcla de
+      variables continuas y categóricas) violan sistemáticamente.</li>
+  <li><strong>1974/1976</strong> — La <em>Equal Credit Opportunity Act</em> (ECOA)
+      en EE.UU. y su Reglamento B exigen que toda denegación de crédito incluya
+      razones específicas y verificables ("adverse action reasons"). Esto no es
+      un detalle menor: convierte la interpretabilidad de un "sería deseable"
+      a un <strong>requisito legal</strong>, y el par WOE+logística es
+      exactamente el diseño que produce esas razones de forma natural (ver 1.3).</li>
+  <li><strong>2002</strong> — Thomas, Edelman y Crook publican <em>"Credit
+      Scoring and Its Applications"</em> (SIAM), la codificación académica
+      estándar del campo.</li>
+  <li><strong>2006</strong> — Naeem Siddiqi publica <em>"Credit Risk Scorecards:
+      Developing and Implementing Intelligent Credit Scoring"</em> (Wiley/SAS).
+      Es la referencia práctica que terminó de estandarizar WOE/IV como
+      metodología de facto en banca — las escalas de interpretación de IV que
+      usa este mismo proyecto (<a href="#iv">§11.3</a>) vienen de ese libro.</li>
+</ul>
+
+<p>Entre aproximadamente <strong>1980 y 2010</strong>, el par "binning + WOE +
+regresión logística" fue, con evidencia razonable, la mejor práctica dominante
+en scoring de crédito al consumo: no porque fuera matemáticamente óptimo en
+abstracto, sino porque era la única combinación que satisfacía simultáneamente
+tres restricciones que ninguna alternativa de la época cumplía a la vez —
+capacidad predictiva razonable, costo computacional bajo, e interpretabilidad
+verificable ante un regulador.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+La pregunta "¿WOE fue SOTA?" tiene una respuesta afirmativa pero matizada: no
+fue el mejor algoritmo posible en un sentido puramente predictivo ni siquiera en
+su propia época (los primeros benchmarks, ver 1.4, ya mostraban que redes
+neuronales y SVM podían igualarlo o superarlo marginalmente). Fue la mejor
+solución al <strong>problema completo</strong>: predecir bien, calcular rápido,
+y poder explicarle a un regulador y a un cliente rechazado por qué. Esa
+distinción — óptimo en una métrica vs. óptimo bajo restricciones reales de
+negocio — es la que hay que tener presente en todo lo que sigue: casi ninguna
+comparación "WOE vs. técnica moderna" que aparece en foros o benchmarks tiene en
+cuenta las tres restricciones a la vez.
+</div>
+
+<h3 id="eda-razones">1.2 Razones estadísticas, computacionales y de negocio de su adopción</h3>
+
+<h4>Explicación técnica</h4>
+<p>Tres frentes, independientes entre sí, empujaron en la misma dirección:</p>
+
+<p><strong>Estadístico.</strong> La regresión logística modela el log-odds del
+target como una <strong>combinación lineal</strong> de los predictores. Si la
+relación real entre un predictor y el riesgo no es lineal en esa escala — por
+ejemplo, el riesgo cae con la edad hasta cierto punto y luego vuelve a subir, un
+patrón en U muy común en datos de crédito — el modelo lineal la captura mal. La
+alternativa clásica (agregar términos polinómicos o splines) complica la
+interpretación y la validación regulatoria. El binning + WOE resuelve esto
+<strong>antes</strong> de que el modelo lineal vea los datos: cada variable se
+discretiza y se reemplaza por el log-odds empírico de su propio bin (ver <a href="#woe">§11.2</a>),
+de modo que la relación entre la variable transformada y el target queda,
+por construcción, tan lineal como haga falta. Es una forma de que un modelo
+simple capture una señal compleja sin dejar de ser simple.</p>
+
+<p><strong>Computacional.</strong> En las décadas en que esta metodología se
+consolidó, ajustar modelos no lineales (redes neuronales, árboles ensamblados)
+sobre carteras de millones de registros y cientos de variables de buró era caro
+o directamente inviable con el hardware disponible. Una regresión logística
+sobre variables ya transformadas se ajusta en segundos y con una única pasada
+sobre los datos — una ventaja que hoy parece trivial pero que en los años 80-90
+era determinante para que un banco pudiera siquiera considerar la técnica.</p>
+
+<p><strong>Negocio y regulatorio.</strong> Un scorecard WOE-logístico produce,
+por construcción, un sistema de puntos: cada bin de cada variable aporta un
+número fijo de puntos al score final (el coeficiente de la logística multiplicado
+por el WOE del bin). Esto permite <strong>auditar cada decisión</strong> bin por
+bin, generar automáticamente las razones de rechazo que exige la ECOA, y
+validar la monotonía de cada variable con el negocio antes de poner el modelo
+en producción — todo sin abrir una caja negra.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Ninguna de las tres razones es "WOE predice mejor". Son razones de <strong>ajuste
+al problema</strong>: la regresión logística sobre WOE fue la única combinación
+que un banco de 1995 podía ajustar con el hardware que tenía, mantener con el
+personal que tenía, y defender ante el regulador que tenía. Cuando alguien dice
+hoy "WOE + logística sigue siendo la mejor práctica", conviene preguntar cuál de
+esas tres razones sigue siendo la restricción activa en su caso — porque las
+tres han cambiado de peso de forma muy distinta desde entonces (la computacional
+casi ha desaparecido; la regulatoria, no).
+</div>
+
+<h3 id="eda-problemas">1.3 Qué problemas resolvía mejor que las alternativas de la época</h3>
+
+<h4>Explicación técnica</h4>
+<p>Frente a las alternativas realmente disponibles en su momento (no frente a
+las de hoy), WOE resolvía tres problemas concretos:</p>
+
+<ul>
+  <li><strong>El supuesto distribucional del análisis discriminante de Fisher.</strong>
+      LDA exige normalidad multivariada e igualdad de covarianzas entre clases.
+      Los datos de crédito —mezcla de variables continuas asimétricas
+      (ingresos, saldos) y categóricas (segmento, canal)— no la cumplen casi
+      nunca. La regresión logística no exige esa distribución; solo exige
+      linealidad en el log-odds, que el binning+WOE provee.</li>
+  <li><strong>Valores ausentes.</strong> Antes de que la imputación estadística
+      moderna (MICE, modelos de imputación basados en árboles) estuviera
+      estandarizada, la ausencia de dato era un problema de ingeniería difícil
+      de resolver de forma defendible. El binning WOE crea un bin "nulo"
+      explícito con su propio log-odds empírico: la ausencia se trata como una
+      categoría más, sin imputar nada y sin descartar la fila.</li>
+  <li><strong>Selección de variables en espacios de alta dimensión.</strong> Un
+      buró de crédito aporta cientos de variables candidatas. Antes de que
+      existieran métodos de regularización L1 (Lasso, Tibshirani 1996) maduros
+      o cómputo suficiente para wrapper methods costosos, el IV daba un filtro
+      univariado <strong>rápido</strong> — una pasada por variable, sin ajustar
+      ningún modelo — para descartar la mayoría del ruido antes de modelar.
+      Esta misma lógica es la que usa la fase 2 de este proyecto (<a href="#fase2">§12</a>).</li>
+</ul>
+
+<p>Las alternativas de la época —LDA, regresión lineal de probabilidad, primeras
+redes neuronales de una capa— fallaban en al menos uno de estos tres frentes:
+o exigían supuestos que los datos no cumplían, o no tenían un tratamiento nativo
+de nulos, o eran demasiado costosas para filtrar cientos de variables candidatas
+antes de modelar.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Esto explica por qué este mismo proyecto sigue usando IV como filtro de la fase
+2: no es una reliquia, es la solución correcta a un problema que sigue
+existiendo — descartar rápido, sin ajustar un modelo completo, la mayoría de un
+universo grande de variables candidatas, con tratamiento explícito de nulos. La
+pregunta relevante no es "¿IV es viejo?" sino "¿sigue resolviendo ESTE problema
+mejor que la alternativa disponible hoy?" — y para el filtrado univariado
+rápido, la respuesta sigue siendo mayormente sí (ver 1.6).
+</div>
+
+<h3 id="eda-evidencia">1.4 Evidencia científica, regulatoria e industrial de su adopción masiva</h3>
+
+<h4>Explicación técnica</h4>
+<p>Tres tipos de evidencia, de naturaleza distinta:</p>
+
+<p><strong>Regulatoria.</strong> El Acuerdo de Basilea II (Basel Committee on
+Banking Supervision, 2004) formalizó el enfoque IRB (<em>Internal
+Ratings-Based</em>), que exige a los bancos <strong>validar y documentar</strong>
+rigurosamente sus modelos de probabilidad de incumplimiento (PD) para calcular
+capital regulatorio. Un modelo que produce un sistema de puntos auditable bin
+por bin es, en la práctica, mucho más fácil de validar ante un supervisor que
+una red neuronal. En 2011, la guía SR 11-7 de la Reserva Federal y la OCC
+("Supervisory Guidance on Model Risk Management") reforzó ese requisito exigiendo
+modelos <em>challenger</em>, documentación exhaustiva y validación independiente
+— un marco que premia estructuralmente la interpretabilidad del scorecard clásico.</p>
+
+<p><strong>Académica.</strong> El primer benchmark riguroso y a gran escala,
+Baesens et al. (2003, <em>Journal of the Operational Research Society</em>),
+comparó regresión logística contra redes neuronales, SVM, árboles y k-NN en
+múltiples datasets de crédito reales. El hallazgo relevante: las técnicas más
+sofisticadas de la época superaban a la logística solo <strong>marginalmente</strong>,
+sin una ganancia que justificara, para la mayoría de los bancos, sacrificar
+interpretabilidad por una mejora de discriminación pequeña.</p>
+
+<p><strong>Industrial.</strong> La codificación práctica de Siddiqi (2006) se
+convirtió en el manual de facto dentro de SAS Enterprise Miner y, por extensión,
+en la mayoría de las áreas de riesgo de la banca que usaban esa plataforma —
+que durante los 2000 y buena parte de los 2010 fue dominante en la industria.
+El vocabulario mismo del campo (WOE, IV, "coarse classing", "scorecard points")
+proviene casi íntegramente de esa codificación.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Tres fuentes de evidencia distintas —ley, benchmark académico y estándar de
+plataforma industrial— apuntaron en la misma dirección durante casi tres
+décadas. Eso es una adopción genuinamente robusta, no una moda. Pero nótese que
+las tres son de <strong>naturaleza institucional</strong> (qué exige el
+regulador, qué mostró un benchmark de 2003, qué implementó un software) más que
+de superioridad matemática intrínseca — lo cual explica por qué, cuando el
+contexto institucional cambia (fintechs no bancarias, mercados sin el mismo
+marco regulatorio), la adopción de WOE es mucho menos universal.
+</div>
+
+<h3 id="eda-tecnicas">1.5 Técnicas posteriores y qué limitaciones de WOE atacan</h3>
+
+<p>Antes de comparar, conviene precisar la crítica estadística central al
+binning en sí: Royston, Altman y Sauerbrei (2006, <em>Statistics in Medicine</em>,
+<em>"Dichotomizing continuous predictors in multiple regression: a bad idea"</em>)
+mostraron formalmente que discretizar una variable continua <strong>pierde
+información</strong> — dos observaciones en el mismo bin pueden tener valores
+muy distintos y reciben el mismo WOE — y puede sesgar la estimación del efecto
+si el punto de corte no refleja la relación real. Esta es la limitación de fondo
+que casi todas las técnicas siguientes atacan, cada una desde un ángulo distinto.</p>
+
+<h4>1.5.1 Binning óptimo y monotónico — un refinamiento, no un reemplazo</h4>
+<p><strong>Motivación:</strong> el "coarse classing" manual (agrupar bins a
+juicio de negocio) de los 90 era subjetivo y no reproducible.
+<strong>Limitación que ataca:</strong> la arbitrariedad del punto de corte, no
+la pérdida de información del binning en sí. <strong>Fundamento:</strong>
+ChiMerge (Kerber, 1992, AAAI) fusiona bins adyacentes mientras la diferencia
+chi-cuadrado entre ellos no sea significativa; MDLP (Fayyad & Irani, 1993, IJCAI)
+usa un criterio de teoría de la información (mínima longitud de descripción)
+para decidir dónde cortar; el binning monotónico moderno (Mironchyk &
+Tchistiakov, 2017) formula el problema como programación entera mixta que
+maximiza el IV total sujeto a que el WOE sea monótono bin a bin — una restricción
+que el negocio exige casi siempre (a más atraso, más riesgo, sin excepciones).
+El paquete <code>optbinning</code> (Navas-Palencia, 2020) es la implementación
+open-source de referencia hoy. <strong>Tipo de mejora:</strong> empírica y de
+proceso — el IV resultante suele ser mayor y el binning es reproducible, pero
+sigue siendo binning: no elimina la pérdida de información de Royston et al.</p>
+
+<h4>1.5.2 Gradient boosting con soporte nativo de categóricas y monotonía</h4>
+<p><strong>Motivación:</strong> aprovechar interacciones entre variables y
+relaciones no lineales sin preprocesarlas a mano. <strong>Limitación que ataca:</strong>
+WOE se calcula variable por variable — no captura que el riesgo de una variable
+dependa del valor de otra (interacciones). <strong>Fundamento:</strong> XGBoost
+(Chen & Guestrin, 2016, KDD) y LightGBM (Ke et al., 2017, NeurIPS) construyen
+ensambles de árboles que particionan el espacio de variables de forma conjunta,
+capturando interacciones automáticamente; CatBoost (Prokhorenkova et al., 2018,
+NeurIPS) resuelve el manejo de categóricas con "estadísticos ordenados" (target
+encoding calculado solo con datos anteriores en un orden aleatorio, evitando la
+fuga de información que el target encoding ingenuo produce). Los tres soportan
+<code>monotone_constraints</code>: se puede exigir que la relación entre una
+variable y la predicción sea monótona, la MISMA propiedad que el scorecard
+garantizaba por diseño — cerrando buena parte de la brecha regulatoria que
+antes era exclusiva de WOE. <strong>Evidencia:</strong> Lessmann, Baesens, Seow
+y Thomas (2015, <em>European Journal of Operational Research</em>,
+<a href="https://doi.org/10.1016/j.ejor.2015.05.030">DOI</a>), la
+actualización del benchmark de Baesens et al. (2003) que comparó
+<strong>41 clasificadores</strong> sobre <strong>8 datasets</strong> reales de
+crédito (no al revés: no son 41 datasets, como una versión anterior de esta
+misma sección afirmaba por error), encontró que los ensambles
+(random forest, boosting, y especialmente combinaciones heterogéneas) obtienen
+el mejor ranking promedio, con mejoras <strong>estadísticamente significativas
+pero moderadas</strong> en AUC/Gini frente a la regresión logística — no una
+transformación radical del poder predictivo, sino una ganancia consistente de
+unos pocos puntos porcentuales según el dataset. <strong>Tipo de mejora:</strong>
+empírica, respaldada por el benchmark más citado del campo.</p>
+
+<h4>1.5.3 Target encoding y embeddings de entidades</h4>
+<p><strong>Motivación:</strong> representar categóricas de alta cardinalidad sin
+la pérdida de granularidad de un único WOE escalar por categoría.
+<strong>Limitación que ataca:</strong> WOE colapsa cada categoría a un solo
+número; dos categorías con WOE parecido pero comportamiento distinto en
+interacción con otras variables son indistinguibles para el modelo.
+<strong>Fundamento:</strong> las embeddings de entidades (Guo & Berkhahn, 2016,
+popularizadas en la competencia Kaggle de Rossmann) aprenden un vector denso por
+categoría dentro de una red neuronal, capturando similitud entre categorías (dos
+sucursales parecidas quedan cerca en el espacio de embedding) — algo que un
+escalar WOE no puede representar. <strong>Ventaja:</strong> más expresivo.
+<strong>Desventaja:</strong> pierde la interpretabilidad directa (un vector de
+20 dimensiones no se explica con un "+15 puntos" como un bin WOE) y requiere
+mucho más dato para entrenarse de forma estable. <strong>Tipo de mejora:</strong>
+mayormente teórica/empírica en dominios con categóricas de cardinalidad muy alta
+y volumen de datos grande (recomendación, marketing); rara vez se usa en scoring
+de crédito regulado por la pérdida de interpretabilidad.</p>
+
+<h4>1.5.4 SHAP y explicabilidad post-hoc</h4>
+<p><strong>Motivación:</strong> permitir usar modelos no interpretables por
+diseño (boosting, redes) en contextos donde antes solo WOE-logística era
+defendible. <strong>Limitación que ataca:</strong> la ventaja histórica de WOE
+no era predictiva sino de <strong>interpretabilidad estructural</strong> —
+SHAP ataca exactamente esa ventaja, no la predictiva. <strong>Fundamento:</strong>
+Lundberg y Lee (2017, NeurIPS, <em>"A Unified Approach to Interpreting Model
+Predictions"</em>) formalizan la atribución de importancia usando valores de
+Shapley (teoría de juegos cooperativos, Shapley 1953): cada predicción se
+descompone en la contribución exacta de cada variable, con garantías axiomáticas
+(consistencia, aditividad) que el WOE nunca tuvo formalmente. <strong>Ventaja:</strong>
+funciona sobre cualquier modelo, incluidos los ensambles de 1.5.2.
+<strong>Desventaja:</strong> es una explicación <em>post-hoc</em> de un modelo ya
+ajustado, no una propiedad estructural del modelo como la monotonía garantizada
+de un scorecard — un regulador conservador todavía distingue entre "el modelo es
+simple por construcción" y "el modelo es complejo pero lo explicamos después".
+<strong>Tipo de mejora:</strong> teórica (fundamento axiomático sólido) y
+empírica (adopción masiva en la industria desde 2018 en adelante) a la vez.</p>
+
+<h3 id="eda-consistencia">1.6 ¿La superioridad de las técnicas nuevas es consistente?</h3>
+
+<h4>Explicación técnica</h4>
+<p>No, y la propia literatura lo documenta. El hallazgo de Lessmann et al.
+(2015) —la evidencia empírica más citada del campo— es que el <strong>ranking
+de clasificadores varía por dataset</strong>: los ensambles ganan en promedio,
+pero no en todos los datasets, y el margen sobre la regresión logística es
+consistentemente <strong>modesto</strong>, nunca del orden de "duplica el poder
+predictivo". La superioridad depende de al menos tres factores:</p>
+<ul>
+  <li><strong>Tamaño de muestra:</strong> con pocos datos (miles de filas, común
+      en carteras nicho o nuevas), un boosting con muchos hiperparámetros
+      sobreajusta más fácilmente que una logística regularizada sobre WOE, que
+      tiene muchos menos grados de libertad efectivos.</li>
+  <li><strong>Restricción regulatoria:</strong> en crédito de consumo regulado
+      (EE.UU., UE, y mercados que siguen Basel II/III), el modelo <em>campeón</em>
+      para decisión suele seguir siendo un scorecard interpretable por diseño;
+      los modelos de boosting se usan como <em>challenger</em> o en capas de
+      detección de fraude, no siempre como el modelo de decisión final.</li>
+  <li><strong>Dimensión de la variable:</strong> para variables con relación
+      claramente no monótona pero de baja cardinalidad (como <code>var_no_monotona</code>
+      en el panel sintético de este proyecto, <a href="#verificacion">§20</a>), el IV sobre bins la captura
+      tan bien como un árbol; la ventaja del boosting se nota más en
+      interacciones entre variables, no en no-linealidades univariadas simples.</li>
+</ul>
+
+<div class="callout warn">
+<strong>Dónde WOE sigue siendo competitivo</strong>
+Filtrado univariado rápido en alta dimensión (exactamente el uso de este
+proyecto); carteras con volumen de datos limitado; contextos donde el modelo de
+decisión final debe ser auditable bin por bin sin depender de una explicación
+post-hoc; motores de scoring en tiempo real con restricciones de cómputo
+mínimas; y como línea base robusta contra la que siempre vale la pena medir un
+modelo más complejo, precisamente porque rara vez pierde por mucho.
+</div>
+
+<div class="callout bad">
+<strong>Dónde ha sido claramente superado</strong>
+Como <strong>modelo de clasificación final</strong> en contextos sin restricción
+regulatoria fuerte y con volumen de datos grande (fraude, marketing, scoring de
+fintechs no bancarias): ahí los ensambles de boosting muestran mejoras
+consistentes, aunque moderadas, en AUC/Gini/KS. También como técnica de
+codificación de categóricas de cardinalidad muy alta, donde target
+encoding/embeddings capturan más señal que un WOE escalar.
+</div>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+La respuesta correcta a "¿qué es mejor, WOE o XGBoost?" es siempre "depende de
+la restricción activa", no "XGBoost, siempre gana en benchmarks". Si la
+restricción activa es interpretabilidad regulatoria verificable, WOE+logística
+sigue ganando por diseño. Si la restricción activa es maximizar discriminación
+pura sin exigencia de explicabilidad estructural, un ensamble de boosting gana
+casi siempre, aunque por un margen menor del que la mayoría espera. Este
+proyecto usa IV/WOE en la fase bivariada precisamente porque su restricción
+activa es "filtrar rápido y de forma auditable", no "maximizar AUC del modelo
+final" — ese es un problema distinto, del que este pipeline es un paso previo.
+</div>
+
+<h3 id="eda-linea-tiempo">1.7 Línea de tiempo de la evolución del binning y la transformación de variables</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Año</th><th>Hito</th><th>Contexto</th><th>Problema que resolvía</th><th>Reemplazó / complementó a</th></tr></thead>
+<tbody>
+<tr><td>1936</td><td>Análisis Discriminante Lineal (Fisher)</td><td>Estadística clásica</td><td>Clasificación con predictores continuos</td><td>Base de los primeros scorecards</td></tr>
+<tr><td>1941</td><td>Durand aplica clasificación estadística al crédito</td><td>Consumo financiero de posguerra en EE.UU.</td><td>Decidir crédito sin criterio puramente subjetivo</td><td>Origen del credit scoring</td></tr>
+<tr><td>1956</td><td>Fundación de FICO</td><td>Primera empresa de scoring comercial</td><td>Escalar la decisión crediticia</td><td>Complementa a Durand (1941)</td></tr>
+<tr><td>1974-1976</td><td>ECOA / Reglamento B</td><td>Marco legal de EE.UU.</td><td>Exigir explicabilidad de rechazos</td><td>Fija el requisito que WOE satisface</td></tr>
+<tr><td>Años 80</td><td>Regresión logística reemplaza a LDA</td><td>Cómputo estadístico más accesible</td><td>Predictores sin normalidad multivariada</td><td>Reemplaza a LDA (1936) en la práctica</td></tr>
+<tr><td>1992</td><td>ChiMerge (Kerber)</td><td>Minería de datos temprana</td><td>Automatizar el binning (antes 100% manual)</td><td>Precursor del binning óptimo</td></tr>
+<tr><td>1993</td><td>MDLP (Fayyad &amp; Irani)</td><td>Teoría de la información aplicada a ML</td><td>Criterio objetivo de corte de bins</td><td>Complementa a ChiMerge</td></tr>
+<tr><td>2002</td><td>Thomas, Edelman &amp; Crook</td><td>Codificación académica</td><td>Estandarizar el campo de credit scoring</td><td>Consolida la literatura previa</td></tr>
+<tr><td>2003</td><td>Benchmark de Baesens et al.</td><td>Primer gran benchmark de clasificadores</td><td>Comparar logística vs. técnicas emergentes</td><td>Evidencia base de 1.4 y 1.6</td></tr>
+<tr><td>2004</td><td>Basel II (enfoque IRB)</td><td>Regulación bancaria internacional</td><td>Exigir modelos de PD validables</td><td>Refuerza la adopción de scorecards</td></tr>
+<tr><td>2006</td><td>Siddiqi, <em>Credit Risk Scorecards</em></td><td>Codificación práctica (SAS)</td><td>Estandarizar WOE/IV como metodología</td><td>Consolida el "estado del arte" clásico</td></tr>
+<tr><td>2011</td><td>SR 11-7 (Fed/OCC)</td><td>Post-crisis financiera 2008</td><td>Gestión de riesgo de modelo</td><td>Refuerza interpretabilidad y validación</td></tr>
+<tr><td>2016</td><td>XGBoost (Chen &amp; Guestrin)</td><td>Auge del boosting escalable</td><td>Capturar interacciones y no linealidad</td><td>Reemplaza a WOE-logística como modelo puramente predictivo en contextos sin restricción regulatoria fuerte</td></tr>
+<tr><td>2016</td><td>Entity Embeddings (Guo &amp; Berkhahn)</td><td>Deep learning aplicado a tabular</td><td>Categóricas de alta cardinalidad</td><td>Alternativa a WOE para codificación categórica</td></tr>
+<tr><td>2017</td><td>LightGBM (Ke et al.)</td><td>Boosting a gran escala</td><td>Eficiencia computacional en datasets masivos</td><td>Complementa/compite con XGBoost</td></tr>
+<tr><td>2017</td><td>SHAP (Lundberg &amp; Lee)</td><td>Explicabilidad de modelos complejos</td><td>Interpretar modelos no interpretables por diseño</td><td>Ataca la ventaja de interpretabilidad de WOE</td></tr>
+<tr><td>2017</td><td>Binning monotónico vía MIP (Mironchyk &amp; Tchistiakov)</td><td>Refinamiento del binning clásico</td><td>Binning óptimo con restricción de monotonía</td><td>Perfecciona el binning WOE, no lo reemplaza</td></tr>
+<tr><td>2018</td><td>CatBoost (Prokhorenkova et al.)</td><td>Boosting con categóricas nativas</td><td>Target encoding sin fuga de información</td><td>Alternativa a WOE para categóricas</td></tr>
+<tr><td>2015 / 2020</td><td>Lessmann et al. (benchmark) / <code>optbinning</code></td><td>Consolidación del consenso actual</td><td>Cuantificar la brecha real WOE vs. ensambles / modernizar el binning óptimo</td><td>Evidencia y tooling del estado actual (1.8)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="eda-consenso">1.8 Consenso actual en academia e industria</h3>
+
+<h4>Explicación técnica</h4>
+<p>El consenso no es "WOE fue superado" ni "WOE sigue siendo lo mejor" en
+términos absolutos, sino uno más útil y más aburrido: son herramientas para
+<strong>problemas distintos</strong> dentro del mismo proyecto de scoring.</p>
+<ul>
+  <li>Para <strong>selección y screening univariado</strong> de variables en
+      alta dimensión: IV/WOE sigue siendo estándar de facto, incluso dentro de
+      pipelines que después usan boosting para el modelo final — exactamente el
+      rol que cumple en este proyecto.</li>
+  <li>Para el <strong>modelo de decisión</strong> en crédito de consumo
+      regulado: el scorecard WOE-logístico sigue siendo, en la mayoría de
+      jurisdicciones, el modelo campeón o el que exige el regulador como mínimo
+      auditable, con boosting como <em>challenger</em> de monitoreo.</li>
+  <li>Para <strong>maximizar poder predictivo puro</strong> sin restricción
+      regulatoria fuerte: los ensambles de boosting con SHAP para explicabilidad
+      son el consenso dominante desde aproximadamente 2016-2018 en adelante.</li>
+</ul>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+La conclusión operativa para quien use este proyecto: usar IV/Gini en la fase
+bivariada (<a href="#fase2">§12</a>) no es una limitación técnica ni una elección anticuada — es la
+herramienta correcta para el problema que esa fase resuelve (filtrar variables
+rápido, de forma auditable, con tratamiento explícito de nulos). Si el objetivo
+final fuera maximizar poder predictivo puro sin restricciones de
+interpretabilidad, la fase 4 de este mismo pipeline (Boruta, <a href="#fase4">§15</a>) y un modelo de
+boosting posterior son precisamente el complemento moderno que la literatura
+recomienda — y este proyecto ya deja la puerta abierta a eso al exportar el
+dataset final de variables seleccionadas (<a href="#dataset-final">§18</a>), listo para alimentar cualquier
+modelo, WOE-logístico o de boosting, según qué restricción sea la que mande en
+cada caso.
+</div>
+
+</section>
+
+<!-- ================================================================= -->
+<section id="binning-profundo">
+<h2>2 · Binning para WOE: investigación exhaustiva</h2>
+
+<p>La sección anterior estableció que WOE es una <strong>transformación</strong>,
+no un algoritmo de clasificación. Esta sección profundiza en la etapa que
+determina casi por completo la calidad de esa transformación: <strong>cómo se
+construyen los bins</strong>. Una fórmula de WOE aplicada sobre un binning
+deficiente produce una variable inútil o, peor, engañosamente predictiva en
+muestra y frágil en producción. El binning no es un detalle de implementación:
+es la decisión estadística central de todo el proceso.</p>
+
+<h3 id="bp-fundamentos">2.1 Fundamentos del binning</h3>
+
+<h4>Explicación técnica</h4>
+<p><strong>Qué es y su objetivo dentro del WOE.</strong> Binning es el proceso
+de partir el rango de una variable (continua, o categórica de alta cardinalidad)
+en un número finito de grupos —bins— tales que, dentro de cada grupo, la tasa de
+eventos pueda tratarse como aproximadamente homogénea. El WOE (ver
+<a href="#woe">§11.2</a>) no se calcula sobre la variable original: se calcula
+<strong>sobre el bin al que pertenece cada observación</strong>. El binning es,
+por tanto, el paso que decide qué información sobrevive a la transformación y
+cuál se pierde.</p>
+
+<p><strong>Por qué el WOE exige discretización previa.</strong> El WOE de un
+grupo se define como el logaritmo de la razón entre la proporción de no eventos
+y la proporción de eventos que caen en ese grupo (ver <a href="#woe">§11.2</a>).
+Esa definición solo tiene sentido si existe un "grupo" sobre el cual contar
+eventos y no eventos. Una variable continua sin discretizar no tiene grupos —
+cada valor es, en el límite, su propio grupo con cero o un evento, y el WOE
+puntual no sería estimable de forma estable. El binning es lo que convierte una
+variable continua en una variable categórica ordenada con suficiente masa por
+categoría para que las proporciones event/no-evento se puedan estimar con error
+razonable.</p>
+
+<p><strong>Propiedades de un buen binning.</strong> Debe ser:</p>
+<ul>
+  <li><strong>Estadísticamente estable</strong>: cada bin con masa suficiente
+      para que su tasa de evento no sea ruido muestral (ver
+      <a href="#ruido">§11.6</a>, donde este proyecto formaliza exactamente
+      este problema para el IV agregado).</li>
+  <li><strong>Discriminante</strong>: bins adyacentes con tasas de evento
+      genuinamente distintas: si dos bins tienen la misma tasa, separarlos no
+      añade información y solo consume grados de libertad.</li>
+  <li><strong>Monótono, cuando el negocio lo exige</strong>: la tasa de evento
+      no cambia de dirección de forma inconsistente con el conocimiento de
+      negocio (a más atraso, más riesgo, sin excepciones).</li>
+  <li><strong>Robusto a nulos y valores atípicos</strong>: sin descartar filas
+      ni forzar una imputación que no se pueda justificar.</li>
+  <li><strong>Reproducible</strong>: los mismos datos de entrenamiento producen
+      siempre el mismo binning, y ese binning se puede aplicar de forma
+      determinista a datos nuevos.</li>
+</ul>
+
+<p><strong>Cómo afecta al rendimiento y a la estabilidad del modelo.</strong> Un
+binning con bins demasiado finos sobreajusta: cada bin captura patrones
+idiosincráticos de la muestra de entrenamiento (ruido), el IV en entrenamiento
+parece alto, y se degrada al aplicar el mismo binning sobre datos nuevos — el
+patrón de sobreajuste clásico, aquí manifestado en la etapa de preprocesamiento
+en vez de en el modelo. Un binning demasiado grueso, en el sentido opuesto,
+promedia patrones reales distintos dentro de un mismo bin y pierde poder
+predictivo genuino (la crítica formal de Royston, Altman y Sauerbrei, 2006,
+citada en <a href="#eda-tecnicas">§1.5</a>). El binning correcto es el punto
+donde ninguno de los dos efectos domina.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Pensemos en "antigüedad laboral" para decidir crédito. Si se crea un bin por
+cada mes exacto (0, 1, 2, 3... meses), cada bin tendrá pocas observaciones y su
+tasa de default será prácticamente aleatoria — puro ruido con apariencia de
+señal. Si en cambio se crea un único bin ("cualquier antigüedad"), se pierde el
+hecho real de que alguien con 1 mes de antigüedad es mucho más riesgoso que
+alguien con 5 años. El binning correcto está en el medio: por ejemplo,
+"0-6 meses", "6-24 meses", "24+ meses" — pocos grupos, cada uno con masa
+suficiente, y cada uno genuinamente distinto de sus vecinos. Ese punto medio no
+se elige a ojo: los métodos de la sección <a href="#bp-metodos">2.3</a> existen
+precisamente para encontrarlo de forma sistemática.
+</div>
+
+<h3 id="bp-construccion">2.2 Construcción de los bins paso a paso</h3>
+
+<p>Independientemente del algoritmo específico (sección <a href="#bp-metodos">2.3</a>),
+todo proceso de binning supervisado pasa, explícita o implícitamente, por estos
+siete pasos.</p>
+
+<h4>Paso 1 · Análisis inicial de la variable</h4>
+<p><strong>Qué se hace:</strong> se examina el tipo de dato (numérica continua,
+numérica discreta, categórica), su distribución (percentiles, asimetría,
+valores atípicos), su proporción de nulos, y su cardinalidad. <strong>Por qué:</strong>
+la estrategia de binning depende del tipo: una variable con 3 valores distintos
+no necesita algoritmo de corte (cada valor es su propio bin); una con miles de
+valores únicos sí. <strong>Criterio estadístico:</strong> los mismos que usa
+este proyecto en su diagnóstico inicial (percentiles p25/p50/p75/p90/p99, conteo
+de únicos, ver <a href="#fase0">§9</a>). <strong>Efecto sobre el WOE final:</strong>
+un análisis inicial deficiente (no detectar que el 40% de los valores son un
+único punto, por ejemplo) produce bins vacíos o inestables más adelante.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es el equivalente a mirar el mapa antes de trazar la ruta. Si no se sabe que
+"monto_deuda" tiene una cola larga con outliers extremos, se corre el riesgo de
+proponer cortes de igual ancho que dejan el 95% de las observaciones en un solo
+bin y el 5% restante repartido en muchos bins casi vacíos.
+</div>
+
+<h4>Paso 2 · Identificación de posibles puntos de corte</h4>
+<p><strong>Qué se hace:</strong> se genera un conjunto candidato de puntos de
+corte — típicamente todos los valores únicos observados, o un subconjunto
+(percentiles, puntos medios entre valores consecutivos ordenados).
+<strong>Por qué:</strong> no tiene sentido evaluar cortes en puntos donde no
+hay datos; los candidatos naturales son los valores realmente observados en la
+variable. <strong>Criterio estadístico:</strong> para variables continuas de
+alta cardinalidad, se usan los cuantiles empíricos como candidatos iniciales
+(reduce el espacio de búsqueda de "todos los valores" a "los deciles", por
+ejemplo) — es exactamente lo que hace <code>binear_numerica()</code> en este
+proyecto con <code>pd.qcut()</code> (ver <a href="#binning">§11.1</a>).
+<strong>Efecto sobre el WOE final:</strong> un conjunto de candidatos demasiado
+disperso puede saltarse el punto de corte óptimo; uno demasiado denso encarece
+el cómputo sin mejorar el resultado.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+No se prueban "todos los números posibles" entre 0 e infinito — eso sería
+infinito e inútil. Se prueban los puntos donde realmente hay observaciones (o
+un resumen de ellos, como los deciles), porque un corte entre dos valores que
+nadie tiene no cambia nada.
+</div>
+
+<h4>Paso 3 · Formación de intervalos (bins)</h4>
+<p><strong>Qué se hace:</strong> con el conjunto de puntos de corte candidato,
+se forman los intervalos iniciales — normalmente más finos de lo necesario (un
+binning "fino" de partida que se refinará en los pasos siguientes).
+<strong>Por qué:</strong> es más fácil <em>fusionar</em> bins finos que
+sobran, que <em>dividir</em> bins gruesos que faltan: casi todos los algoritmos
+(ChiMerge, MDLP, árboles) parten de una partición fina y la simplifican
+("bottom-up"), en vez de partir de un único bin y dividirlo ("top-down") como
+hacen específicamente los árboles de decisión. <strong>Criterio estadístico:</strong>
+el número inicial de bins suele fijarse por una regla práctica (por ejemplo, 10-20
+bins de igual frecuencia) más que por una fórmula cerrada.
+<strong>Efecto sobre el WOE final:</strong> el binning inicial es un punto de
+partida, no el resultado: su forma exacta importa poco si los pasos 4-6
+funcionan bien, porque van a corregirlo.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es como empezar a esculpir con más material del necesario y luego quitar lo que
+sobra, en vez de empezar con poco material y arriesgarse a que falte. Un
+binning inicial de 20 grupos que luego se fusiona a 6 es más seguro que intentar
+adivinar directamente los 6 grupos correctos desde el principio.
+</div>
+
+<h4>Paso 4 · Cálculo de eventos y no eventos por bin</h4>
+<p><strong>Qué se hace:</strong> para cada bin se cuentan cuántas observaciones
+tienen target=1 (eventos) y target=0 (no eventos). <strong>Por qué:</strong> es
+el insumo directo de la fórmula de WOE y de todos los criterios de evaluación
+posteriores (chi-cuadrado, entropía, IV). <strong>Criterio estadístico:</strong>
+ninguno todavía — es un conteo, no una decisión; pero de aquí sale la <code>tasa_evento</code>
+por bin, la magnitud que todos los criterios de corte intentan diferenciar entre
+bins vecinos. <strong>Efecto sobre el WOE final:</strong> bins con muy pocos
+eventos (o cero) producen WOE inestable o indefinido — el motivo de la
+corrección de continuidad de Haldane-Anscombe que usa este proyecto (ver
+<a href="#woe">§11.2</a>).</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Si un bin tiene 300 observaciones y solo 2 eventos, cualquier conclusión sobre
+"cuánto riesgo tiene este bin" descansa en una muestra de 2 casos — es
+estadísticamente casi lo mismo que no tener información. Este conteo es lo que
+permite detectar ese problema antes de confiar en el WOE de ese bin.
+</div>
+
+<h4>Paso 5 · Evaluación de la calidad de cada bin</h4>
+<p><strong>Qué se hace:</strong> se mide, para cada bin y para cada par de bins
+adyacentes, si aportan información distinguible — vía un test estadístico
+(chi-cuadrado), una medida de impureza (entropía, Gini), o la contribución al IV
+del bin. <strong>Por qué:</strong> permite decidir de forma objetiva —no a
+juicio— cuáles bins deberían fusionarse por ser estadísticamente indistinguibles
+y cuáles deberían mantenerse separados por ser genuinamente distintos.
+<strong>Criterio estadístico:</strong> el más usado para bins adyacentes es el
+test chi-cuadrado de independencia sobre la tabla 2x2 (eventos/no-eventos de
+cada bin); ver el ejemplo numérico completo en <a href="#bp-ejemplo">2.6</a>.
+<strong>Efecto sobre el WOE final:</strong> este paso es el que evita que el
+binning final contenga bins "gemelos" que dividen artificialmente la misma
+señal en dos, diluyendo el IV total sin necesidad.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es preguntarse, bin por bin: "¿este grupo se comporta de verdad distinto a su
+vecino, o es la misma historia contada dos veces?" Si dos bins vecinos tienen
+9.2% y 9.4% de default, probablemente sea la misma historia (ruido muestral);
+si tienen 5% y 27%, casi seguro son historias distintas.
+</div>
+
+<h4>Paso 6 · Fusión o división de bins</h4>
+<p><strong>Qué se hace:</strong> se fusionan los pares de bins adyacentes que el
+paso 5 identificó como estadísticamente indistinguibles, y se repite el proceso
+—porque al fusionar dos bins, el bin resultante ahora es adyacente a otros
+bins que también podrían fusionarse— hasta que ya no queden fusiones
+justificadas o se alcance un número mínimo de bins. <strong>Por qué:</strong>
+es la etapa que realmente "decide" el binning final; los pasos anteriores solo
+preparan la evidencia para esta decisión. <strong>Criterio estadístico:</strong>
+umbral de significancia del test (p. ej. p&gt;0.05 en ChiMerge implica fusionar),
+o umbral de ganancia mínima de IV/entropía. <strong>Efecto sobre el WOE
+final:</strong> determina directamente cuántos bins sobreviven y, por tanto,
+cuántos coeficientes/puntos tendrá el scorecard final para esa variable.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es un proceso iterativo, no una única pasada: se fusiona el par más parecido,
+se vuelve a mirar el tablero completo (el bin fusionado tiene nuevos vecinos), y
+se repite. Se detiene cuando ya no hay pares "sospechosamente parecidos" que
+fusionar, o cuando fusionar más pondría en riesgo tener suficientes bins para
+que el negocio pueda auditar la variable.
+</div>
+
+<h4>Paso 7 · Obtención del binning definitivo</h4>
+<p><strong>Qué se hace:</strong> se fija el conjunto final de puntos de corte,
+se verifica que cumpla las restricciones de negocio (monotonía, tamaño mínimo,
+tratamiento de nulos — ver <a href="#bp-restricciones">2.5</a>), y se calcula el
+WOE definitivo de cada bin sobre esa partición ya congelada.
+<strong>Por qué:</strong> a partir de aquí el binning se <strong>fija</strong>:
+los mismos puntos de corte se aplicarán, sin recalcular, a cualquier dato futuro
+(entrenamiento, validación, producción) — es lo que garantiza que el WOE no
+tenga fuga de información entre particiones. <strong>Criterio estadístico:</strong>
+verificación final de monotonía y de tamaño mínimo por bin.
+<strong>Efecto sobre el WOE final:</strong> este es, literalmente, el binning
+que entra a la fórmula de WOE (<a href="#woe">§11.2</a>) — todo lo anterior fue
+preparación para llegar a este punto.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+A partir de este paso, los puntos de corte son un contrato congelado: si el
+bin "24-36 meses de antigüedad" se definió en el entrenamiento, un cliente
+nuevo con 30 meses de antigüedad cae en ese mismo bin, con el mismo WOE, sin
+recalcular nada. Cambiar el binning después de este punto —por ejemplo,
+recalcularlo con datos de producción— es exactamente el tipo de fuga de
+información que invalida la validación de un modelo.
+</div>
+
+<h3 id="bp-metodos">2.3 Métodos para generar los bins</h3>
+
+<p>A continuación se comparan los métodos más usados en la práctica y en la
+literatura. La tabla resume las dimensiones comparativas solicitadas; el texto
+posterior profundiza en cómo decide cada uno sus cortes.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Método</th><th>Criterio de corte</th><th>Ventajas</th><th>Desventajas</th><th>Estabilidad</th><th>Interpretabilidad</th><th>Complejidad</th><th>Cuándo usarlo</th></tr></thead>
+<tbody>
+<tr><td>Manual</td><td>Juicio experto de negocio</td><td>Total alineación con la intuición del negocio</td><td>Subjetivo, no reproducible, no escala</td><td>Baja (depende del analista)</td><td>Máxima</td><td>Ninguna</td><td>Variables regulatorias muy sensibles con pocas categorías</td></tr>
+<tr><td>Equal Width</td><td>Rango dividido en k tramos iguales</td><td>Trivial de implementar</td><td>Bins vacíos o desbalanceados con distribuciones asimétricas</td><td>Baja</td><td>Alta</td><td>O(n)</td><td>Variables acotadas y aproximadamente uniformes</td></tr>
+<tr><td>Equal Frequency (cuantiles)</td><td>Cada bin con igual nº de observaciones</td><td>Garantiza masa mínima por bin</td><td>No supervisado: ignora el target, puede partir un patrón limpio</td><td>Alta</td><td>Alta</td><td>O(n log n)</td><td>Screening rápido; es lo que usa este proyecto (§11.1)</td></tr>
+<tr><td>ChiMerge</td><td>Test chi-cuadrado entre bins adyacentes</td><td>Supervisado, criterio estadístico objetivo</td><td>Sensible al umbral de significancia elegido; greedy (no óptimo global)</td><td>Media-alta</td><td>Alta</td><td>O(n log n) aprox.</td><td>Binning supervisado clásico en scoring de crédito</td></tr>
+<tr><td>Chi-Square Binning (Chi2)</td><td>ChiMerge + criterio de consistencia para detener automáticamente</td><td>Automatiza también el número final de bins</td><td>Más parámetros a calibrar (nivel de inconsistencia tolerado)</td><td>Media-alta</td><td>Alta</td><td>O(n log n) aprox.</td><td>Cuando se quiere automatizar también cuántos bins dejar</td></tr>
+<tr><td>CART</td><td>Impureza Gini / reducción de varianza</td><td>Captura no linealidad automáticamente; muy usado y validado</td><td>Sesgo hacia variables con más puntos de corte posibles</td><td>Media</td><td>Alta (árbol pequeño)</td><td>O(n log n) por nivel</td><td>Binning rápido cuando ya se usan árboles en el resto del pipeline</td></tr>
+<tr><td>Decision Tree Binning (genérico)</td><td>Cualquier criterio de partición de árboles (entropía, Gini, inferencia condicional)</td><td>Flexible; variantes con corrección de sesgo (ctree)</td><td>Requiere elegir el algoritmo de árbol subyacente</td><td>Media</td><td>Alta</td><td>Variable</td><td>Cuando CART clásico muestra sesgo de selección</td></tr>
+<tr><td>MDLP</td><td>Mínima longitud de descripción (teoría de la información)</td><td>Criterio de parada propio, no requiere fijar nº de bins a mano</td><td>Puede sub-discretizar variables con señal débil</td><td>Alta</td><td>Alta</td><td>O(n log n)</td><td>Cuando se quiere que el propio criterio decida cuántos bins hacen falta</td></tr>
+<tr><td>Entropy-based (Catlett)</td><td>Minimización recursiva de entropía</td><td>Precursor conceptual de MDLP, simple de entender</td><td>Criterio de parada ad hoc, menos riguroso que MDLP</td><td>Media</td><td>Alta</td><td>O(n log n)</td><td>Contexto pedagógico o baseline histórico</td></tr>
+<tr><td>Optimal Binning</td><td>Maximiza IV/entropía sujeto a restricciones (nº de bins, tamaño mínimo)</td><td>Óptimo respecto al objetivo elegido, no greedy</td><td>Más caro computacionalmente que los métodos greedy</td><td>Alta</td><td>Alta</td><td>Depende del solver (polinómico a NP-difícil según restricciones)</td><td>Cuando se necesita el máximo IV posible bajo restricciones explícitas</td></tr>
+<tr><td>Monotonic Optimal Binning</td><td>Ídem + restricción explícita de monotonía del WOE</td><td>Cumple el requisito regulatorio de monotonía por construcción</td><td>El óptimo puede ser algo menor en IV que sin la restricción</td><td>Muy alta</td><td>Máxima</td><td>Programación entera mixta (Mironchyk &amp; Tchistiakov, 2017)</td><td>Scoring de crédito regulado; estándar de facto hoy (ver §2.7)</td></tr>
+<tr><td>Optimización matemática (MIP/CP)</td><td>Formulación exacta con solver (CBC, CP-SAT)</td><td>Reproducible, exacto, soporta múltiples restricciones simultáneas</td><td>Requiere un solver y más tiempo de cómputo que un heurístico</td><td>Muy alta</td><td>Alta</td><td>Depende del solver</td><td>Producción moderna vía <code>optbinning</code> (Navas-Palencia, 2020)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Binning manual</h4>
+<p>El analista de negocio define los puntos de corte a partir de su conocimiento
+del dominio ("menos de 18 meses de antigüedad es un grupo, de 18 a 36 otro...").
+No usa ningún criterio estadístico de optimización; su validez descansa
+enteramente en la experiencia de quien lo define.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es la opción correcta cuando el negocio tiene una razón categórica (no
+estadística) para un corte — por ejemplo, un umbral legal o contractual exacto
+("mayor o menor de edad", "más o menos de 90 días de mora" por definición
+regulatoria de default). Fuera de esos casos, es la opción menos defendible
+técnicamente de toda la lista.
+</div>
+
+<h4>Equal Width (igual ancho)</h4>
+<p>Se divide el rango [mínimo, máximo] de la variable en k intervalos de igual
+longitud, sin mirar el target ni la distribución de los datos.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Con una variable de ingresos —donde unos pocos valores extremos estiran el
+rango— igual ancho deja casi todas las observaciones en el primer bin y el
+resto vacíos o casi vacíos. Es la razón por la que casi nunca se recomienda
+para variables financieras con colas largas.
+</div>
+
+<h4>Equal Frequency (cuantiles)</h4>
+<p>Se fijan los cortes de modo que cada bin reciba (aproximadamente) el mismo
+número de observaciones — es el método base que usa <code>binear_numerica()</code>
+en este proyecto (<a href="#binning">§11.1</a>), con fusión adicional por
+tamaño mínimo de bin.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es un método <em>no supervisado</em> (no mira el target al decidir los cortes):
+rápido y con masa garantizada por bin, pero puede partir por la mitad un
+patrón limpio si el corte de cuantil cae justo donde el riesgo cambia de forma
+natural. Por eso este proyecto lo usa como base y luego evalúa el resultado con
+el piso de ruido (<a href="#ruido">§11.6</a>), en vez de asumir que el binning
+por cuantiles es automáticamente el óptimo.
+</div>
+
+<h4>ChiMerge</h4>
+<p>Kerber (1992, AAAI) parte de un binning fino (cada valor único, o cuantiles
+finos) y fusiona iterativamente el par de bins adyacentes con el menor
+estadístico chi-cuadrado, mientras ese estadístico no sea significativo a un
+nivel de confianza elegido (típicamente 90-95%).</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es el algoritmo de referencia histórico para el binning supervisado en scoring
+de crédito, y el que se ilustra con números reales en la sección
+<a href="#bp-ejemplo">2.6</a>: se fusionan los bins que el chi-cuadrado no
+distingue, se conservan los que sí distingue con claridad.
+</div>
+
+<h4>Chi-Square Binning / Chi2</h4>
+<p>Liu y Setiono (1995, ICTAI) extendieron ChiMerge añadiendo un criterio de
+"inconsistencia" que decide automáticamente cuándo detener las fusiones, en vez
+de fijar a mano el nivel de significancia final.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Resuelve la pregunta que ChiMerge deja abierta ("¿y con cuántos bins me quedo
+al final?") con un criterio propio, útil cuando se automatiza el binning de
+cientos de variables de buró sin revisión manual una por una.</div>
+
+<h4>CART y Decision Tree Binning</h4>
+<p>Breiman, Friedman, Olshen y Stone (1984) formalizaron los árboles de
+clasificación y regresión: cada corte se elige para maximizar la reducción de
+impureza (Gini o entropía) entre el nodo padre y los nodos hijos. Usar un árbol
+de un solo predictor contra el target produce, de forma natural, un conjunto de
+puntos de corte binarios recursivos — un binning. Se ha documentado que los
+árboles con selección greedy de variable tienden a sesgarse hacia predictores
+con más puntos de corte posibles (alta cardinalidad), lo que motivó variantes
+con inferencia condicional no sesgada (Hothorn, Hornik &amp; Zeileis, 2006).</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Si el resto del pipeline ya usa árboles o boosting, generar el binning con un
+árbol de un solo nivel es conveniente porque reutiliza la misma lógica y las
+mismas librerías, aunque no incorpore de forma nativa la restricción de
+monotonía que sí exige el binning óptimo monotónico.
+</div>
+
+<h4>MDLP y Entropy-based Binning</h4>
+<p>Catlett (1991) propuso minimizar recursivamente la entropía de la partición
+resultante; Fayyad e Irani (1993, IJCAI) formalizaron cuándo detener esa
+recursión usando el <em>Principio de Mínima Longitud de Descripción</em>: se
+sigue partiendo mientras la ganancia de información de un nuevo corte supere el
+costo de describir ese corte adicional — un criterio de teoría de la
+información, no un umbral arbitrario.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+MDLP responde objetivamente la pregunta "¿vale la pena un bin más?": solo si la
+información que aporta supera el costo de la complejidad adicional que
+introduce. Es, conceptualmente, el mismo principio de sesgo-varianza que
+justifica el piso de ruido de este proyecto (<a href="#ruido">§11.6</a>): más
+bins no es gratis.
+</div>
+
+<h4>Optimal Binning y Monotonic Optimal Binning</h4>
+<p>En vez de fusionar/dividir de forma greedy (una decisión local a la vez), el
+binning óptimo formula el problema completo como una optimización: elegir el
+conjunto de puntos de corte que maximiza el IV total (o minimiza la entropía),
+sujeto a restricciones explícitas — número mínimo/máximo de bins, tamaño mínimo
+por bin, y opcionalmente monotonía del WOE. Mironchyk y Tchistiakov (2017)
+formalizaron la versión con restricción de monotonía como un problema de
+programación entera mixta, resoluble con solvers modernos (CBC, CP-SAT).</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+La diferencia con ChiMerge no es solo de grado: ChiMerge decide fusión por
+fusión, sin garantía de que la secuencia de decisiones locales llegue al mejor
+binning global posible. El binning óptimo busca directamente ese óptimo global
+—al costo de ser más caro de calcular—, y si además se exige monotonía,
+garantiza por construcción la propiedad que un regulador de crédito exige.
+</div>
+
+<h4>Métodos basados en optimización matemática (MIP/CP)</h4>
+<p>Es la implementación práctica y moderna de la idea de "binning óptimo": la
+diferencia frente a los años 90 no es conceptual sino de <strong>madurez de los
+solvers</strong> (CBC, OR-Tools/CP-SAT) y de cómputo disponible, que hoy
+resuelven en segundos problemas que antes eran inviables. El paquete
+<code>optbinning</code> (Navas-Palencia, 2020) es la implementación
+open-source de referencia, con soporte nativo para restricción de monotonía.</p>
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es el mismo argumento que ya apareció en la evolución histórica de WOE
+(<a href="#eda-razones">§1.2</a>): una técnica puede ser conceptualmente vieja y
+prácticamente nueva a la vez, porque lo que faltaba no era la idea sino el
+cómputo para ejecutarla a escala de producción.
+</div>
+
+<h3 id="bp-criterios-corte">2.4 ¿Cómo decide un algoritmo dónde cortar una variable?</h3>
+
+<h4>Explicación técnica</h4>
+<p>Todo algoritmo de binning supervisado optimiza, explícita o implícitamente,
+alguno de estos criterios:</p>
+<ul>
+  <li><strong>Máxima separación entre clases</strong>: maximizar la distancia
+      entre las distribuciones acumuladas de eventos y no eventos en cada corte
+      (el fundamento del estadístico de Kolmogorov-Smirnov, usado por algunas
+      implementaciones de binning como criterio de corte directo).</li>
+  <li><strong>Maximización del Information Value</strong>: el criterio directo
+      del binning óptimo (<a href="#bp-metodos">2.3</a>): elegir los cortes que
+      maximizan la suma de IV por bin (ver fórmula en <a href="#iv">§11.3</a>).</li>
+  <li><strong>Reducción de entropía</strong>: el criterio de MDLP/CART — un
+      corte es bueno si reduce la incertidumbre (entropía de Shannon) sobre el
+      target dentro de cada partición resultante.</li>
+  <li><strong>Estadístico chi-cuadrado</strong>: el criterio de ChiMerge — un
+      corte (o la ausencia de fusión) se justifica si la diferencia entre bins
+      adyacentes es estadísticamente significativa.</li>
+  <li><strong>Monotonicidad</strong>: no es un criterio de optimización en sí,
+      sino una <strong>restricción</strong> que limita qué soluciones son
+      admisibles, sin importar cuánto IV o entropía ganen.</li>
+  <li><strong>Tamaño mínimo por bin</strong>: otra restricción, no un objetivo —
+      existe para blindar el criterio principal contra el sobreajuste
+      estadístico de bins pequeños (ver Paso 4 en <a href="#bp-construccion">2.2</a>).</li>
+  <li><strong>Estabilidad temporal</strong>: algunos binning más sofisticados
+      incorporan el PSI entre periodos (ver <a href="#estabilidad">§16</a> de
+      este proyecto) como restricción adicional, penalizando binning que se
+      comporta de forma inestable en el tiempo aunque maximice IV en el
+      periodo de entrenamiento.</li>
+  <li><strong>Regularización</strong>: cualquier penalización explícita sobre
+      el número de bins (equivalente a lo que MDLP hace de forma implícita vía
+      su criterio de longitud de descripción).</li>
+</ul>
+
+<p><strong>Por qué algunos cortes son mejores que otros, y cómo se evita el
+sobreajuste.</strong> Un corte es mejor cuando separa observaciones que
+genuinamente se comportan distinto, no cuando separa observaciones que por
+azar cayeron en lados distintos de una muestra finita. La forma de distinguir
+ambos casos es exactamente la misma lógica del piso de ruido que este proyecto
+usa para el IV agregado (<a href="#ruido">§11.6</a>): comparar la ganancia
+observada contra la ganancia que produciría un corte al azar con el mismo
+tamaño de muestra. Un algoritmo que no impone ningún tamaño mínimo de bin ni
+ningún criterio de significancia terminará, en el límite, con un bin por cada
+valor único observado — IV máximo posible en la muestra de entrenamiento, y
+WOE que no generaliza a ningún dato nuevo.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Todos estos criterios son variaciones de la misma pregunta de fondo: "¿esta
+diferencia entre grupos es real, o es lo que cualquier partición aleatoria de
+este tamaño de muestra produciría de todas formas?" Chi-cuadrado, entropía e IV
+son formas matemáticas distintas de hacer la misma pregunta; las restricciones
+(monotonía, tamaño mínimo, estabilidad temporal) son las barandas que impiden
+que la respuesta a esa pregunta termine sobreajustada al ruido de una muestra
+particular.
+</div>
+
+<h3 id="bp-restricciones">2.5 Restricciones que debe cumplir un buen binning</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Restricción</th><th>Obligatoria / Recomendable / Opcional</th><th>Por qué</th></tr></thead>
+<tbody>
+<tr><td>Mínimo de observaciones por bin</td><td><strong>Obligatoria</strong></td><td>Sin ella, el WOE de un bin pequeño es ruido puro. Este proyecto la fija en <code>min_prop_bin=0.03</code> (mínimo 3% de la muestra por bin).</td></tr>
+<tr><td>Mínimo de eventos y no eventos por bin</td><td><strong>Obligatoria</strong></td><td>Un bin sin ningún evento (o sin ningún no evento) produce un WOE indefinido sin la corrección de Haldane-Anscombe (<a href="#woe">§11.2</a>).</td></tr>
+<tr><td>Tratamiento de valores faltantes</td><td><strong>Obligatoria</strong></td><td>La ausencia suele ser informativa; se trata como bin propio (<code>__NULOS__</code>) en vez de imputar, tal como hace este proyecto.</td></tr>
+<tr><td>Tratamiento de outliers</td><td>Recomendable</td><td>Un binning por cuantiles ya amortigua outliers moderados; para outliers extremos conviene un bin de cola explícito ("mayor a p99").</td></tr>
+<tr><td>Categorías poco frecuentes</td><td><strong>Obligatoria</strong> en alta cardinalidad</td><td>Sin agruparlas (p. ej. en <code>__OTROS__</code>), producen WOE inestable o colapsan el binning entero — el fallo que este proyecto documenta y corrige explícitamente (ver <a href="#verificacion">verificación empírica, §20</a>).</td></tr>
+<tr><td>Monotonicidad del WOE</td><td>Recomendable a obligatoria según contexto</td><td>Obligatoria de facto en crédito de consumo regulado (expectativa del supervisor); recomendable pero no siempre indispensable en otros dominios (fraude, marketing).</td></tr>
+<tr><td>Estabilidad temporal</td><td>Recomendable</td><td>Un binning con alto IV pero inestable entre periodos (PSI alto, <a href="#estabilidad">§16</a>) es una trampa que se degrada en producción.</td></tr>
+<tr><td>Prevención de data leakage</td><td><strong>Obligatoria</strong></td><td>El binning se calcula solo con datos de entrenamiento y se aplica congelado a validación/producción (Paso 7, <a href="#bp-construccion">2.2</a>); recalcularlo con datos de test invalida cualquier métrica posterior.</td></tr>
+<tr><td>Prevención de sobreajuste</td><td><strong>Obligatoria</strong></td><td>Es el efecto conjunto del tamaño mínimo de bin y del criterio de significancia de corte (<a href="#bp-criterios-corte">2.4</a>).</td></tr>
+<tr><td>Reproducibilidad</td><td><strong>Obligatoria</strong></td><td>El mismo dataset de entrenamiento debe producir siempre el mismo binning — indispensable para auditoría regulatoria y para depurar el pipeline.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Si solo se puede garantizar un subconjunto de estas restricciones por falta de
+tiempo, las verdaderamente innegociables son cuatro: tamaño mínimo de bin (para
+no confundir ruido con señal), tratamiento explícito de nulos (para no perder
+información ni filas), prevención de leakage (para que la validación del
+modelo sea honesta), y reproducibilidad (para poder auditar y depurar). La
+monotonicidad y la estabilidad temporal son "recomendable a obligatoria" porque
+dependen del contexto regulatorio — en scoring de crédito de consumo, tratarlas
+como obligatorias es la práctica más segura.
+</div>
+
+<h3 id="bp-ejemplo">2.6 Ejemplo completo</h3>
+
+<p>El siguiente ejemplo no es hipotético: se generó una variable sintética
+<code>dias_atraso</code> (0 a 120 días, con una relación creciente y ruidosa
+con el riesgo de incumplimiento, 2.000 observaciones, tasa de evento global
+9.20%) y se ejecutó a través de las funciones reales de este proyecto
+(<code>binear_numerica()</code> y <code>tabla_woe()</code> en
+<code>src/featsel/metricas.py</code>), para que cada número mostrado aquí sea
+verificable y reproducible, no inventado.</p>
+
+<h4>Variable original y binning inicial (10 bins por cuantiles)</h4>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Bin</th><th>n</th><th>Eventos</th><th>No eventos</th><th>Tasa evento</th><th>WOE</th><th>IV del bin</th></tr></thead>
+<tbody>
+<tr><td>(-inf, 1]</td><td>234</td><td>15</td><td>219</td><td>6.41%</td><td>0.3851</td><td>0.0148</td></tr>
+<tr><td>(1, 3]</td><td>246</td><td>10</td><td>236</td><td>4.07%</td><td>0.8492</td><td>0.0631</td></tr>
+<tr><td>(3, 4]</td><td>145</td><td>7</td><td>138</td><td>4.83%</td><td>0.6506</td><td>0.0237</td></tr>
+<tr><td>(4, 6]</td><td>203</td><td>10</td><td>193</td><td>4.93%</td><td>0.6485</td><td>0.0329</td></tr>
+<tr><td>(6, 8]</td><td>180</td><td>13</td><td>167</td><td>7.22%</td><td>0.2529</td><td>0.0052</td></tr>
+<tr><td>(8, 11]</td><td>211</td><td>11</td><td>200</td><td>5.21%</td><td>0.5931</td><td>0.0292</td></tr>
+<tr><td>(11, 14]</td><td>186</td><td>17</td><td>169</td><td>9.14%</td><td>0.0053</td><td>0.0000</td></tr>
+<tr><td>(14, 19]</td><td>205</td><td>26</td><td>179</td><td>12.68%</td><td>-0.3524</td><td>0.0147</td></tr>
+<tr><td>(19, 27]</td><td>192</td><td>21</td><td>171</td><td>10.94%</td><td>-0.1889</td><td>0.0037</td></tr>
+<tr><td>(27, inf]</td><td>198</td><td>54</td><td>144</td><td>27.27%</td><td>-1.2903</td><td>0.2697</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>IV total del binning inicial: 0.4570</strong> (clasificación
+"FUERTE" en la escala de Siddiqi, ver <a href="#iv">§11.3</a>).</p>
+
+<h4>Evaluación de calidad: ¿qué bins fusionar?</h4>
+<p>Se aplica el test chi-cuadrado del Paso 5 (<a href="#bp-construccion">2.2</a>)
+sobre pares de bins adyacentes. Dos resultados reales, en extremos opuestos:</p>
+
+<div class="formula">
+Par (3,4] vs (4,6]:      χ² = 0.0018   p = 0.9665   → NO distinguibles: fusionar
+Par (19,27] vs (27,inf]: χ² = 16.7459  p = 0.000043 → claramente distintos: NO fusionar
+</div>
+
+<p>El primer par tiene tasas de evento casi idénticas (4.83% vs 4.93%) y WOE
+casi idéntico (0.6506 vs 0.6485): el chi-cuadrado confirma que la diferencia es
+indistinguible del azar (p=0.97). El segundo par tiene tasas muy distintas
+(10.94% vs 27.27%): el chi-cuadrado confirma con altísima confianza que son
+grupos de riesgo genuinamente diferentes (p&lt;0.0001) — fusionarlos destruiría
+señal real.</p>
+
+<h4>Binning final tras la fusión</h4>
+<p>Se fusionan <code>(3,4]</code> y <code>(4,6]</code> en un único bin
+<code>(3,6]</code> y se recalcula el WOE/IV completo con las funciones reales
+del proyecto (no se suman las contribuciones a mano: la corrección de
+Haldane-Anscombe depende del número total de bins, así que fusionar cambia
+ligeramente el WOE de <strong>todos</strong> los bins, no solo del fusionado).</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Bin</th><th>n</th><th>Eventos</th><th>No eventos</th><th>Tasa evento</th><th>WOE</th><th>IV del bin</th></tr></thead>
+<tbody>
+<tr><td>(-inf, 1]</td><td>234</td><td>15</td><td>219</td><td>6.41%</td><td>0.3827</td><td>0.0147</td></tr>
+<tr><td>(1, 3]</td><td>246</td><td>10</td><td>236</td><td>4.07%</td><td>0.8468</td><td>0.0628</td></tr>
+<tr><td><strong>(3, 6]</strong> <em>(fusionado)</em></td><td>348</td><td>17</td><td>331</td><td>4.89%</td><td>0.6737</td><td>0.0601</td></tr>
+<tr><td>(6, 8]</td><td>180</td><td>13</td><td>167</td><td>7.22%</td><td>0.2505</td><td>0.0051</td></tr>
+<tr><td>(8, 11]</td><td>211</td><td>11</td><td>200</td><td>5.21%</td><td>0.5907</td><td>0.0290</td></tr>
+<tr><td>(11, 14]</td><td>186</td><td>17</td><td>169</td><td>9.14%</td><td>0.0029</td><td>0.0000</td></tr>
+<tr><td>(14, 19]</td><td>205</td><td>26</td><td>179</td><td>12.68%</td><td>-0.3547</td><td>0.0149</td></tr>
+<tr><td>(19, 27]</td><td>192</td><td>21</td><td>171</td><td>10.94%</td><td>-0.1912</td><td>0.0038</td></tr>
+<tr><td>(27, inf]</td><td>198</td><td>54</td><td>144</td><td>27.27%</td><td>-1.2927</td><td>0.2711</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>IV total tras la fusión: 0.4616</strong> (9 bins, frente a 10 antes).
+El IV no solo no cae al fusionar dos bins redundantes: sube ligeramente, porque
+desaparece la dilución que esos dos bins casi idénticos introducían en la
+corrección de continuidad. Es la confirmación empírica del principio de 2.1: un
+bin de más que no aporta información distinguible no es gratis, y quitarlo
+mejora el resultado.</p>
+
+<div class="callout warn">
+<strong>Un problema real que este ejemplo deja visible: la no monotonía</strong>
+El WOE de los 9 bins finales, en orden de la variable, es: 0.38 → 0.85 → 0.67 →
+0.25 → 0.59 → 0.003 → -0.35 → -0.19 → -1.29. No es monótono: entre
+<code>(6,8]</code> y <code>(8,11]</code> el WOE sube en vez de bajar, y entre
+<code>(14,19]</code> y <code>(19,27]</code> vuelve a subir. Con datos ruidosos
+y bins de ~200 observaciones, el chi-cuadrado por pares no garantiza monotonía
+global —solo compara vecinos, no la tendencia completa—. En producción, el
+siguiente paso sería aplicar directamente un <strong>Monotonic Optimal
+Binning</strong> (<a href="#bp-metodos">2.3</a>), que impone la monotonía como
+restricción explícita del problema de optimización en vez de esperar que
+emerja de fusiones locales.
+</div>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Este ejemplo no se "arregló" para que saliera perfecto a propósito: es el
+resultado real de aplicar cuantiles + fusión chi-cuadrado a una variable con
+ruido genuino, exactamente el tipo de resultado imperfecto que aparece en la
+práctica. La lección no es "el binning por cuantiles es malo", sino que ningún
+método greedy garantiza monotonía por sí solo —hace falta o bien más pasos de
+fusión dirigidos específicamente a corregir inversiones de tendencia, o bien
+usar directamente un algoritmo que la garantice por construcción.
+</div>
+
+<h3 id="bp-recomendaciones">2.7 Recomendaciones actuales</h3>
+
+<h4>Explicación técnica</h4>
+<p><strong>Método más recomendado hoy.</strong> Para binning destinado a WOE en
+scoring de crédito, el consenso actual —tanto en literatura reciente como en
+herramientas de producción— es el <strong>binning óptimo con restricción de
+monotonía</strong> (Mironchyk &amp; Tchistiakov, 2017), resuelto vía programación
+matemática (MIP/CP), sobre binning manual, equal-width, o incluso ChiMerge sin
+restricción de monotonía. Cuando el dominio no exige monotonía (fraude,
+marketing), un binning óptimo sin esa restricción, o directamente MDLP/CART,
+sigue siendo competitivo y más barato de calcular.</p>
+
+<p><strong>Qué reemplazó al binning manual.</strong> En la práctica industrial,
+el binning manual ("coarse classing" a juicio de negocio, dominante hasta los
+2000) fue reemplazado progresivamente por ChiMerge y variantes automatizadas
+durante los 2000-2010, y por binning óptimo/monotónico desde
+aproximadamente 2017-2020 en adelante, a medida que los solvers de
+optimización se volvieron rápidos y accesibles.</p>
+
+<p><strong>Bibliotecas más usadas hoy:</strong></p>
+<ul>
+  <li><code>optbinning</code> (Python, Navas-Palencia) — binning óptimo y
+      monotónico vía programación matemática; el más citado en literatura
+      reciente y el de mayor adopción para producción nueva.</li>
+  <li><code>scorecardpy</code> (Python, port de Shichen Xie) y el paquete
+      <code>scorecard</code> de R (mismo autor) — implementan un flujo
+      ChiMerge-like con ajustes prácticos de la industria; muy usados en banca
+      latinoamericana y asiática.</li>
+  <li><code>smbinning</code> (R, Herman Jopia) — binning supervisado vía árbol
+      de decisión de un solo predictor, con salida directa de tabla WOE/IV;
+      clásico en la comunidad de riesgo de habla hispana.</li>
+  <li>El nodo <em>Interactive Grouping</em> de SAS Enterprise Miner — sigue
+      siendo el estándar dentro de bancos que operan sobre esa plataforma,
+      combinando binning automático con ajuste manual supervisado por el
+      analista.</li>
+</ul>
+
+<p><strong>Configuración recomendada para bins robustos, interpretables y
+estables en producción</strong> (síntesis de la literatura y de las
+restricciones de <a href="#bp-restricciones">2.5</a>):</p>
+<ul>
+  <li>Mínimo 5% de la muestra por bin (este proyecto usa 3% por defecto,
+      parametrizable — un valor más conservador reduce aún más el riesgo de
+      bins ruidosos a costa de menos granularidad).</li>
+  <li>Monotonía del WOE forzada por construcción cuando el modelo final es un
+      scorecard sujeto a revisión regulatoria.</li>
+  <li>Bin explícito para nulos, nunca imputación previa al binning.</li>
+  <li>Reevaluación periódica del PSI del binning contra periodos recientes
+      (<a href="#estabilidad">§16</a>), no solo al momento de construirlo.</li>
+  <li>Congelamiento estricto del binning tras el entrenamiento (Paso 7 de
+      <a href="#bp-construccion">2.2</a>), con control de versiones del
+      binning igual que se versiona el modelo.</li>
+</ul>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+El consenso académico (qué algoritmo produce, en teoría, el mejor IV bajo
+restricciones dadas) y la mejor práctica industrial (qué es fácil de mantener,
+auditar y explicar durante años en producción) coinciden hoy en un mismo punto:
+binning óptimo con monotonía forzada, con nulos y categorías raras tratados
+explícitamente, y con el mismo rigor de control de versiones que un modelo de
+machine learning. La recomendación específica para riesgo y fraude no es una
+excepción a la regla general — es la aplicación más estricta de exactamente las
+mismas reglas, porque el costo de un binning inestable ahí no es solo
+estadístico sino regulatorio.
+</div>
+
+<h3 id="bp-debate">2.8 El debate actual: ¿binning sí o no? Balance de evidencia (2017-2026)</h3>
+
+<div class="callout warn">
+<strong>Nota de método</strong>
+Todo lo citado en esta subsección se verificó activamente (búsqueda web y
+lectura de resúmenes/abstracts) al momento de escribirla, en vez de citarse solo
+de memoria de entrenamiento. Un ejemplo concreto de por qué esto importa: al
+verificar el benchmark de Lessmann et al. (2015) citado en <a href="#eda-tecnicas">§1.5</a>,
+se detectó que una versión anterior de esta documentación afirmaba
+incorrectamente "41 datasets" cuando el estudio real compara
+<strong>41 clasificadores sobre 8 datasets</strong> — el error ya está corregido
+ahí. Se deja esta nota para que quede claro que las cifras de esta sección
+tienen la misma verificación, no una superior sin más.
+</div>
+
+<h4>Explicación técnica</h4>
+<p>La pregunta "¿hay que binear o no?" no es una sola pregunta: la evidencia
+reciente muestra que la respuesta depende de <strong>qué modelo</strong> recibe
+la variable y de <strong>qué problema</strong> se busca resolver con el binning.
+Distinguir esto es, precisamente, donde está el debate real hoy.</p>
+
+<p><strong>(a) Binning dentro de árboles de boosting con histogramas — no es un
+debate, es una implementación ya resuelta, con investigación activa solo sobre
+CUÁL esquema de binning usar.</strong> LightGBM, XGBoost (modo <code>hist</code>)
+e HistGradientBoosting de scikit-learn discretizan internamente cada variable
+en unos pocos cientos de valores para acelerar la búsqueda de cortes — esto ya
+no se cuestiona. Lo que sí es investigación activa y muy reciente es qué
+esquema de binning interno conviene: Labovich (2025) propone <em>k-means
+binning</em> como alternativa al binning por cuantiles que usan estas librerías
+por defecto, con mejoras ocasionales sustanciales en regresión (hasta 55% de
+reducción de error cuadrático en un dataset con distribución muy asimétrica) y
+resultados equivalentes en clasificación — es decir, el debate aquí es
+"¿cuantiles o k-means?", no "¿binear o no binear?".</p>
+
+<p><strong>(b) Discretizar variables para modelos LINEALES (regresión
+logística) — este es el punto donde la evidencia reciente genuinamente
+contradice la intuición heredada de la bioestadística clásica.</strong> Royston,
+Altman y Sauerbrei (2006) —el artículo que fundamenta gran parte de la crítica
+histórica al binning citada en <a href="#bp-fundamentos">2.1</a>— trabaja en el
+contexto de <strong>estimación de efectos</strong> en estudios biomédicos
+(¿cuál es el efecto causal de esta variable?), con muestras habitualmente
+medianas. Zaidi, Du y Webb (2017), en cambio, trabajando en el contexto de
+<strong>predicción</strong> (machine learning, no inferencia causal) y sobre 42
+datasets de referencia, encuentran que discretizar variables continuas puede
+<strong>mejorar genuinamente</strong> la exactitud de clasificadores lineales
+(regresión logística, SVM, redes de una capa) al reducir su <em>sesgo de
+representación</em> — y que el efecto es más pronunciado, no menos, en datasets
+grandes. Son dos comunidades académicas con objetivos distintos (estimar un
+efecto de forma insesgada vs. maximizar exactitud predictiva) llegando a
+conclusiones que parecen opuestas sobre el mismo procedimiento estadístico. No
+es que uno de los dos esté equivocado: están respondiendo preguntas distintas.</p>
+
+<p><strong>(c) Monotonicidad para satisfacer al regulador — este es el frente
+donde el terreno ha cambiado más rápido, y muy recientemente.</strong> La
+ventaja histórica de WOE+logística era garantizar monotonía por construcción.
+El benchmark más reciente sobre este punto (Koklev, diciembre 2025 / revisado
+marzo 2026) cuantifica el "precio de la monotonicidad" (<em>Price of
+Monotonicity</em>) al imponer restricciones de monotonía directamente en
+gradient boosting para PD de crédito: el costo en AUC va de
+<strong>esencialmente cero hasta ~2.9%</strong> según el dataset, y es
+"prácticamente gratuito" (menos de 0.2%) en datasets grandes — exactamente el
+régimen de tamaño muestral de la banca de consumo. En paralelo, arquitecturas
+como los <em>Explainable Boosting Machines</em> (EBM, modelos aditivos
+generalizados con árboles pequeños) y los "boosted scorecards" (p. ej. la
+librería <code>xbooster</code>) ya reportan igualar el desempeño de XGBoost en
+benchmarks generales manteniendo una estructura totalmente transparente, sin
+pasar por WOE. La ventaja regulatoria que antes exigía WOE por ausencia de
+alternativas hoy tiene al menos dos caminos distintos que la igualan sin
+discretizar nada.</p>
+
+<p><strong>(d) Codificación de categóricas — la evidencia más reciente y más
+grande apunta a que "no hay un ganador universal".</strong> Matteucci, Arzamasov
+y Boehm (NeurIPS 2023, Datasets and Benchmarks Track) publicaron el benchmark
+más grande hasta la fecha de codificadores categóricos: 32 configuraciones de
+codificador sobre 50 datasets. Su conclusión central no es qué codificador gana,
+sino que <strong>la elección del dataset, de los factores experimentales y de
+la forma de agregar resultados determinan el ranking</strong> más que el propio
+codificador — un hallazgo metodológico incómodo mencionado explícitamente por
+los autores porque contradice benchmarks anteriores (más pequeños) que sí
+declaraban un ganador universal. Esto es evidencia real de que, para
+codificación de categóricas específicamente, la pregunta "¿es WOE mejor o peor
+que target encoding?" no tiene una respuesta única defendible con la evidencia
+actual: depende del dataset.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica — mi posición</strong>
+Mi lectura del conjunto de esta evidencia, no de una sola fuente: el binning
+como <strong>requisito</strong> para lograr buena predicción o monotonía
+auditable ya no es defendible como afirmación general — hay alternativas
+evidenciadas (monotone_constraints casi gratis en boosting, EBM/boosted
+scorecards transparentes por diseño) que no existían, o no estaban
+evidenciadas con este rigor, hace apenas 3-5 años. Al mismo tiempo, "el binning
+ya no sirve para nada" es igual de indefendible: sigue siendo la base de
+<em>cómo funcionan por dentro</em> las librerías de boosting más usadas hoy
+(solo cambió la pregunta, de "¿binear?" a "¿con qué esquema?"), sigue teniendo
+evidencia reciente a favor para modelos lineales en datasets grandes (Zaidi et
+al., 2017), y para codificación de categóricas ningún método —WOE incluido— se
+puede descartar de forma universal (Matteucci et al., 2023). La conclusión
+honesta no es un punto medio cómodo: es que "binning sí o no" dejó de ser una
+pregunta bien planteada. La pregunta correcta, hoy, es "binning para qué
+modelo, con qué objetivo (predicción vs. estimación de efecto vs. auditoría
+regulatoria), y con qué alternativa específica se está comparando" — y en cada
+una de esas cuatro preguntas la evidencia de 2022-2026 apunta en una dirección
+distinta.
+</div>
+
+<h4>Fuentes verificadas de esta subsección</h4>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Referencia</th><th>Enlace verificado</th></tr></thead>
+<tbody>
+<tr><td>Royston, Altman &amp; Sauerbrei (2006), <em>Statistics in Medicine</em></td><td><a href="https://onlinelibrary.wiley.com/doi/10.1002/sim.2331">DOI 10.1002/sim.2331</a></td></tr>
+<tr><td>Altman &amp; Royston (2006), <em>BMJ</em>, "The cost of dichotomising continuous variables"</td><td><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC1458573/">PMC1458573</a></td></tr>
+<tr><td>Zaidi, Du &amp; Webb (2017), "On the Effectiveness of Discretizing Quantitative Attributes in Linear Classifiers"</td><td><a href="https://arxiv.org/abs/1701.07114">arXiv:1701.07114</a></td></tr>
+<tr><td>Lessmann, Baesens, Seow &amp; Thomas (2015), <em>EJOR</em> 247(1):124-136</td><td><a href="https://doi.org/10.1016/j.ejor.2015.05.030">DOI 10.1016/j.ejor.2015.05.030</a> · <a href="https://eprints.soton.ac.uk/377196/1/Lessmann_Benchmarking.pdf">PDF de acceso abierto</a></td></tr>
+<tr><td>Grinsztajn, Oyallon &amp; Varoquaux (2022), NeurIPS, "Why do tree-based models still outperform deep learning on tabular data?"</td><td><a href="https://arxiv.org/abs/2207.08815">arXiv:2207.08815</a></td></tr>
+<tr><td>Labovich (2025), "A Case for Library-Level k-Means Binning in Histogram Gradient-Boosted Trees"</td><td><a href="https://arxiv.org/abs/2505.12460">arXiv:2505.12460</a></td></tr>
+<tr><td>Koklev (2025/2026), "What's the Price of Monotonicity? A Multi-Dataset Benchmark of Monotone-Constrained Gradient Boosting for Credit PD"</td><td><a href="https://arxiv.org/abs/2512.17945">arXiv:2512.17945</a></td></tr>
+<tr><td>Matteucci, Arzamasov &amp; Boehm (2023), NeurIPS Datasets &amp; Benchmarks Track, "A benchmark of categorical encoders for binary classification"</td><td><a href="https://arxiv.org/abs/2307.09191">arXiv:2307.09191</a></td></tr>
+<tr><td>Navas-Palencia (2020), "Optimal binning: mathematical programming formulation"</td><td><a href="https://arxiv.org/abs/2001.08025">arXiv:2001.08025</a> · <a href="https://github.com/guillermo-navas-palencia/optbinning">repositorio</a></td></tr>
+<tr><td>Mironchyk &amp; Tchistiakov (2017), "Monotone optimal binning algorithm for credit risk modeling"</td><td><a href="https://www.researchgate.net/publication/322520135_Monotone_optimal_binning_algorithm_for_credit_risk_modeling">ResearchGate (PDF)</a></td></tr>
+</tbody>
+</table>
+</div>
+
+</section>
+
+<!-- ================================================================= -->
+<section id="contexto">
+<h2>3 · Contexto del proyecto</h2>
+
+<p>Este proyecto resuelve un problema concreto: dado un <strong>dataset de panel</strong>
+—observaciones de las mismas entidades repetidas a lo largo del tiempo— decidir
+qué variables merecen entrar a un modelo predictivo, y <strong>dejar constancia
+auditable de cada decisión</strong>.</p>
+
+<p>La parte difícil no es calcular métricas. Es que el proceso resista una
+revisión: seis meses después, alguien debe poder abrir un archivo y responder
+«¿por qué se eliminó esta variable?» sin leer el código ni preguntarle a nadie.
+De ahí que el entregable central sea un Excel de bitácora y no una lista de
+nombres.</p>
+
+<h3>Principios de diseño</h3>
+<ol>
+  <li><strong>Nada se elimina en silencio.</strong> Cada exclusión lleva un flag,
+      una columna de texto con el motivo exacto y los valores que lo motivaron.</li>
+  <li><strong>Cálculo y exportación separados.</strong> Las fases devuelven
+      DataFrames puros; el reporteador solo formatea. Si hubiera un <code>if</code>
+      de decisión en la capa de exportación, la trazabilidad se rompería.</li>
+  <li><strong>Los umbrales son parámetros, no constantes.</strong> Todos están en
+      <code>config.yaml</code> con su valor por defecto justificado.</li>
+  <li><strong>El dataset es panel, no corte transversal.</strong> Ver <a href="#panel">sección 4</a>.</li>
+  <li><strong>Degradación controlada.</strong> Si una librería opcional falla, el
+      flujo continúa con un sustituto documentado, nunca se detiene.</li>
+</ol>
+
+<div class="callout why">
+<strong>Por qué un Excel y no un JSON o un notebook</strong>
+El destinatario de una bitácora de selección de variables no suele ser quien
+escribió el código: es un validador, un área de riesgo o un regulador. El Excel
+con filtros, semáforo de flags y un diccionario de columnas incorporado es el
+formato que esa audiencia puede auditar sin intermediarios.
+</div>
+</section>
+
+<!-- ================================================================= -->
+<section id="panel">
+<h2>4 · Por qué tratar el dataset como panel cambia las cosas</h2>
+
+<p>Un panel tiene dos dimensiones: <em>entidad</em> (i) y <em>tiempo</em> (t). Cada
+fila es un par (i, t). Ignorar esa estructura y tratar el conjunto como si fueran
+observaciones independientes produce cuatro errores concretos:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Si se ignora el panel…</th><th>Consecuencia</th><th>Qué hace este pipeline</th></tr></thead>
+<tbody>
+<tr><td>Se asume independencia entre filas</td>
+    <td>Los intervalos de confianza y los tests son optimistas: la misma entidad aporta información correlacionada varias veces</td>
+    <td>Se documenta explícitamente y se advierte en la lectura de Boruta</td></tr>
+<tr><td>Se mide solo la varianza total</td>
+    <td>Una variable fija por entidad (el sector económico) parece tener dispersión, pero no varía en el tiempo</td>
+    <td>Descomposición <em>within</em> / <em>between</em> e <strong>ICC</strong></td></tr>
+<tr><td>Se calcula el IV sobre la muestra agrupada</td>
+    <td>El poder predictivo puede venir de un único periodo atípico</td>
+    <td><strong>IV por periodo</strong> + coeficiente de variación + <strong>PSI</strong></td></tr>
+<tr><td>No se valida la llave (i, t)</td>
+    <td>Duplicados inflan artificialmente el tamaño muestral y las métricas</td>
+    <td>Validación <strong>bloqueante</strong> de unicidad de la llave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Descomposición de la varianza</h3>
+<p>La varianza total de una variable en un panel se descompone en dos partes con
+significados distintos:</p>
+
+<div class="formula">
+Var_between = Var( media_i(x) )        <span class="note">variación ENTRE entidades — diferencias estructurales y permanentes</span>
+Var_within  = media_i( Var_t(x) )      <span class="note">variación DENTRO de cada entidad — evolución temporal</span>
+
+ICC = Var_between / (Var_between + Var_within)
+</div>
+
+<p>El <strong>ICC</strong> (correlación intraclase) resume ambas en un número:</p>
+<ul>
+  <li><strong>ICC ≈ 1</strong> — la variable es prácticamente <em>fija por entidad</em>.
+      Un modelo de efectos fijos la absorbería por completo.</li>
+  <li><strong>ICC ≈ 0</strong> — casi toda su variación es temporal.</li>
+</ul>
+
+<div class="callout why">
+<strong>Por qué no se elimina por ICC alto</strong>
+Una variable invariante en el tiempo <em>sí</em> puede ser predictiva (el sector
+de una empresa explica su riesgo). Eliminarla sería un error. Pero condiciona qué
+tipo de modelo puede aprovecharla, así que se <strong>informa</strong> en lugar de
+decidir por el analista.
+</div>
+</section>
+
+<!-- ================================================================= -->
+<section id="arquitectura">
+<h2>5 · Arquitectura</h2>
+
+<div class="pipeline">
+  <div class="stage"><div class="n">Fase 0</div><div class="t">Diagnóstico</div>
+    <div class="d">Perfil de cada columna. No elimina nada: fotografía del punto de partida.</div></div>
+  <div class="stage"><div class="n">Fase 1</div><div class="t">Univariado</div>
+    <div class="d">Ceros+nulos y baja variación. No mira el target.</div></div>
+  <div class="stage"><div class="n">Fase 2</div><div class="t">Bivariado</div>
+    <div class="d">IV, Gini y score compuesto frente al target.</div></div>
+  <div class="stage"><div class="n">Fase 3</div><div class="t">Multivariado</div>
+    <div class="d">Redundancia entre variables y colinealidad múltiple.</div></div>
+  <div class="stage"><div class="n">Fase 4</div><div class="t">Boruta</div>
+    <div class="d">Opcional. Importancia condicional como contraste.</div></div>
+</div>
+
+<h3>Módulos</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Módulo</th><th>Responsabilidad única</th></tr></thead>
+<tbody>
+<tr><td><code>bootstrap.py</code></td><td>Revisa → instala → confirma dependencias. Solo librería estándar.</td></tr>
+<tr><td><code>config.py</code></td><td>Fuente única de verdad de parámetros + validación previa.</td></tr>
+<tr><td><code>logging_utils.py</code></td><td>Log a consola, archivo y memoria (para la hoja de bitácora).</td></tr>
+<tr><td><code>io_utils.py</code></td><td>Carga y tipificación. Ninguna decisión de selección.</td></tr>
+<tr><td><code>validaciones.py</code></td><td>Integridad del panel: llave, balance, target.</td></tr>
+<tr><td><code>metricas.py</code></td><td>Estadística pura: WOE, IV, Gini, Cramér, η, VIF, PSI, piso de ruido.</td></tr>
+<tr><td><code>fase0…fase4</code></td><td>Una fase por archivo. Devuelven DataFrames, no escriben archivos.</td></tr>
+<tr><td><code>reporte_excel.py</code></td><td>Solo formatea. Cero lógica de decisión.</td></tr>
+<tr><td><code>pipeline.py</code></td><td>Orquesta y consolida. No calcula métricas.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<!-- ================================================================= -->
+<section id="bootstrap">
+<h2>6 · Arranque y gestión automática de dependencias</h2>
+
+<p>El proyecto debe poder ejecutarse en un entorno limpio. Eso impone una
+restricción sobre el orden de arranque que conviene entender:</p>
+
+<div class="callout warn">
+<strong>Restricción crítica</strong>
+<code>bootstrap.py</code> usa <strong>únicamente la librería estándar</strong>. No
+puede importar pandas, porque pandas es precisamente una de las cosas que podría
+faltar. Por el mismo motivo, <code>run_pipeline.py</code> hace los imports pesados
+<em>dentro</em> de <code>main()</code>, después del bootstrap, y no en la cabecera
+del archivo.
+</div>
+
+<h3>Ciclo por dependencia</h3>
+<ol>
+  <li><strong>Verificar</strong> con <code>importlib.util.find_spec()</code>, que
+      localiza el módulo sin llegar a ejecutarlo.</li>
+  <li><strong>Instalar</strong> con <code>python -m pip install --upgrade &lt;paquete&gt;</code>,
+      sin fijar versión, para obtener la última estable publicada.</li>
+  <li><strong>Invalidar cachés</strong> con <code>importlib.invalidate_caches()</code>
+      y <strong>reintentar</strong> la importación en el proceso actual.</li>
+  <li><strong>Registrar</strong> el resultado en el log y en la hoja
+      <code>07b_Dependencias</code>.</li>
+</ol>
+
+<div class="callout why">
+<strong>Por qué el paso 3 no es opcional</strong>
+Que <code>pip</code> devuelva código 0 no significa que el módulo sea importable
+<em>ahora mismo</em>. El sistema de importación de Python cachea la ausencia de un
+módulo: sin invalidar esas cachés, el proceso seguiría creyendo que no existe y el
+pipeline fallaría inmediatamente después de una instalación exitosa.
+</div>
+
+<h3>Clasificación y degradación</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Tipo</th><th>Paquetes</th><th>Si falla</th></tr></thead>
+<tbody>
+<tr><td><strong>Crítica</strong></td><td>numpy, pandas, scipy, scikit-learn, openpyxl</td>
+    <td class="bad-t">Aborta con mensaje explícito</td></tr>
+<tr><td><strong>Soporte</strong></td><td>PyYAML, joblib, pyarrow</td>
+    <td class="warn-t">Se registra; el flujo continúa con valores por defecto</td></tr>
+<tr><td><strong>Fase 4</strong></td><td>Boruta, BorutaShap, shap</td>
+    <td class="warn-t">Se usa la implementación nativa incluida</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Las dependencias de Boruta solo se resuelven si <code>usar_boruta = true</code>:
+no tiene sentido pagar el costo de instalar SHAP si esa fase está desactivada.
+El flag <code>--sin-autoinstall</code> verifica sin tocar el entorno, para
+instalaciones corporativas selladas.</p>
+</section>
+
+<!-- ================================================================= -->
+<section id="config">
+<h2>7 · Configuración transversal: cero hardcodeo</h2>
+
+<p>Los nombres de las columnas <code>target</code>, <code>id</code> y
+<code>tiempo</code> se declaran <strong>en un único lugar</strong> y viajan por
+todo el proyecto dentro del objeto <code>ConfigPipeline</code>.</p>
+
+<div class="callout ok">
+<strong>Regla mantenida en todo el código</strong>
+Ningún módulo contiene literales como <code>"target"</code> o <code>"periodo"</code>.
+Todos leen <code>cfg.columna_target</code>, <code>cfg.columna_id</code>,
+<code>cfg.columna_tiempo</code>, o los helpers <code>cfg.columnas_rol</code>,
+<code>cfg.columnas_no_candidatas</code> y <code>cfg.rol_de(columna)</code>.
+Esto incluye el <strong>generador de datos de demostración</strong>, que nombra sus
+propias columnas a partir de la configuración.
+</div>
+
+<pre><code>entradas:
+  ruta_dataset:       "data/panel_sintetico.csv"
+  columna_target:     "target"        # cambie aquí…
+  columna_id:         "id_entidad"    # …y aquí…
+  columna_tiempo:     "periodo"       # …y aquí. Nada más que tocar.
+  usar_boruta:        true
+  ruta_salida_excel:  "outputs/bitacora_feature_selection.xlsx"</code></pre>
+
+<p><strong>Precedencia:</strong> valores por defecto del código &lt;
+<code>config.yaml</code> &lt; flags de línea de comandos. El YAML admite secciones
+anidadas por legibilidad; se aplanan al cargarlo, de modo que el dataclass no
+necesita conocer esa estructura.</p>
+
+<h3>Validación previa</h3>
+<p><code>ConfigPipeline.validar()</code> corre <em>antes</em> de tocar el dataset y
+comprueba: campos obligatorios no vacíos, que las tres columnas de rol sean
+distintas entre sí, que no aparezcan también en <code>columnas_excluidas</code>,
+que las proporciones estén en (0,1], que el umbral alterno sea efectivamente más
+conservador que el principal, y que los pesos del score sumen algo positivo
+(se renormalizan a 1 y se avisa si no sumaban 1).</p>
+</section>
+
+<!-- ================================================================= -->
+<section id="validacion">
+<h2>8 · Validación de integridad del panel</h2>
+
+<p>Cuatro comprobaciones, en orden. Las dos primeras son bloqueantes.</p>
+
+<h3>6.1 Existencia de las columnas de rol</h3>
+<p>Si falta alguna, se aborta listando las columnas disponibles: es el error más
+frecuente y merece un mensaje que lo resuelva de inmediato.</p>
+
+<h3>6.2 Unicidad de la llave compuesta (id, tiempo)</h3>
+<p><strong>Bloqueante.</strong> Un panel exige exactamente una observación por
+entidad y periodo. Se distingue entre dos casos porque tienen causas distintas:</p>
+<ul>
+  <li><strong>Duplicado exacto</strong> (la fila entera se repite) → basura del
+      proceso de carga.</li>
+  <li><strong>Llave duplicada con contenido distinto</strong> → la granularidad
+      declarada del panel es errónea; hay una dimensión adicional sin declarar.</li>
+</ul>
+<p>El mensaje incluye ambos conteos y hasta cinco llaves de ejemplo.</p>
+
+<h3>6.3 Utilidad del target</h3>
+<p>Se aborta si es 100 % nulo o constante. Se detecta su tipo
+(<code>BINARIO</code> / <code>MULTICLASE</code> / <code>CONTINUO</code>) porque
+determina cómo se calculan IV y Gini. Si la clase minoritaria representa menos
+del 1 %, se advierte: con tan pocos eventos el IV por bin se vuelve inestable.</p>
+
+<h3>6.4 Coherencia estructural</h3>
+<p>Se cuentan entidades y periodos y se determina si el panel está
+<strong>balanceado</strong> (toda entidad observada en todo periodo).</p>
+
+<div class="callout warn">
+<strong>Por qué el balance importa para leer las métricas</strong>
+En un panel desbalanceado, las métricas agrupadas (<em>pooled</em>) dan más peso a
+las entidades con más periodos observados. Una variable puede parecer predictiva
+porque describe bien a un subconjunto sobrerrepresentado. No invalida el análisis,
+pero condiciona su interpretación, así que se documenta en el resumen ejecutivo.
+</div>
+</section>
+
+<!-- ================================================================= -->
+<section id="fase0">
+<h2>9 · Fase 0 · Diagnóstico inicial</h2>
+
+<p>No elimina nada. Su función es dejar por escrito el estado del dataset
+<strong>antes</strong> de tocarlo, para que cualquier decisión posterior pueda
+contrastarse contra el punto de partida.</p>
+
+<h3>Perfil por columna</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Grupo</th><th>Métricas</th></tr></thead>
+<tbody>
+<tr><td>Cobertura</td><td><code>n_nulos</code>, <code>pct_nulos</code>, <code>n_ceros</code>, <code>pct_ceros</code>, <code>pct_ceros_mas_nulos</code></td></tr>
+<tr><td>Cardinalidad</td><td><code>n_unicos</code>, <code>pct_unicos</code>, <code>valor_mas_frecuente</code>, <code>pct_valor_mas_frecuente</code></td></tr>
+<tr><td>Tendencia y dispersión</td><td><code>media</code>, <code>desviacion_estandar</code>, <code>varianza</code>, <code>coef_variacion</code>, <code>minimo</code>, <code>maximo</code>, <code>rango</code></td></tr>
+<tr><td>Percentiles</td><td><code>p25</code>, <code>p50</code>, <code>p75</code>, <code>p90</code>, <code>p99</code>, <code>iqr</code></td></tr>
+<tr><td>Forma</td><td><code>asimetria</code>, <code>curtosis</code></td></tr>
+<tr><td><strong>Panel</strong></td><td><code>var_within</code>, <code>var_between</code>, <code>icc_panel</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Tratamiento de «cero» en variables de texto</h3>
+<p>En una columna numérica, cero es cero. En texto se considera equivalente la
+cadena vacía y el literal <code>"0"</code>: son el equivalente semántico de
+ausencia de contenido. Se documenta porque es una convención, no una verdad
+universal.</p>
+
+<h3>Exclusión temprana: aviso, no decisión</h3>
+<div class="callout why">
+<strong>Por qué separar el aviso de la eliminación</strong>
+La fase 0 marca columnas que «se ven problemáticas» (constantes, muy vacías,
+cardinalidad casi única — el patrón de un identificador disfrazado). Pero
+<strong>no elimina</strong>. Si el diagnóstico eliminara, habría dos lugares
+distintos donde se toman decisiones de exclusión y la auditoría se volvería
+ambigua. La eliminación formal ocurre solo en la fase 1, con umbrales explícitos.
+</div>
+</section>
+
+<!-- ================================================================= -->
+<section id="fase1">
+<h2>10 · Fase 1 · Pruebas univariadas</h2>
+
+<p>Evalúa cada columna <strong>sin mirar el target</strong>. Son criterios de
+calidad de dato, no de poder predictivo.</p>
+
+<h3>8.1 Exceso de ceros + nulos</h3>
+<div class="formula">
+pct_ceros_mas_nulos = (n_ceros + n_nulos) / n_filas
+
+eliminar  ⟺  pct_ceros_mas_nulos ≥ umbral
+</div>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Umbral</th><th>Valor</th><th>Cuándo usarlo</th></tr></thead>
+<tbody>
+<tr><td>Principal</td><td class="num"><strong>95 %</strong></td><td>Por defecto</td></tr>
+<tr><td>Alterno conservador</td><td class="num">90 %</td><td><code>usar_umbral_alterno: true</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué 95 % y por qué es especialmente relevante en panel</strong>
+Una variable constante en el 95 % de las filas aporta señal en, como máximo, el
+5 % restante. En un panel esa fracción rara vez está repartida al azar: suele
+concentrarse en <em>unas pocas entidades</em> observadas en varios periodos. El
+modelo que la use terminará aprendiendo <em>el identificador de esas entidades</em>,
+no el fenómeno. El umbral del 90 % existe para contextos donde el costo de
+conservar una variable inútil es mayor que el de perder una marginal.
+</div>
+
+<h3>8.2 Baja variación — cinco pruebas complementarias</h3>
+<p>Una variable sin dispersión no puede explicar la dispersión del target.
+Ninguna prueba individual basta, por eso se aplican cinco y se marca la variable
+si <em>cualquiera</em> se cumple:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Subcriterio</th><th>Condición</th><th>Qué detecta que las otras no</th></tr></thead>
+<tbody>
+<tr><td><code>flg_constante</code></td><td>n_únicos &lt; 2</td><td>Constante pura</td></tr>
+<tr><td><code>flg_std_baja</code></td><td>σ ≤ 1e-8</td><td>Constante en escala <strong>absoluta</strong></td></tr>
+<tr><td><code>flg_cv_bajo</code></td><td>σ/|μ| ≤ 1e-4</td><td>Constante en escala <strong>relativa</strong></td></tr>
+<tr><td><code>flg_categoria_dominante</code></td><td>p<sub>modal</sub> ≥ 0.99</td><td>Funciona en numéricas <strong>y</strong> categóricas</td></tr>
+<tr><td><code>flg_percentiles_comprimidos</code></td><td>IQR ≤ 0 <strong>y</strong> p25 = p99</td><td>La distribución colapsa pese a tener colas</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué el coeficiente de variación y no solo la desviación estándar</strong>
+Una σ de 0.01 es despreciable si la media es 10<sup>6</sup>, pero enorme si la
+media es 0.001. La σ absoluta no es comparable entre variables de distinta escala;
+el CV sí. En el panel de demostración, <code>var_cv_bajo</code> tiene
+σ = 0.02 —lejos del umbral absoluto de 1e-8— pero media 10<sup>6</sup>, así que
+su CV es 2e-8 y se detecta correctamente.
+</div>
+
+<div class="callout why">
+<strong>Por qué el IQR nulo no basta por sí solo</strong>
+Un IQR de cero significa que al menos el 50 % de la masa está en un único valor.
+En variables de conteo (número de atrasos, número de productos) eso es
+perfectamente normal y no indica falta de información. Por eso se exige
+<em>además</em> que p25 = p99, lo que implica que ~74 % de la distribución colapsa
+en un punto.
+</div>
+
+<p>La tabla de salida incluye <strong>todas</strong> las columnas originales —también
+target, id y tiempo, marcadas con su rol— para que sea la fotografía completa, y
+cada eliminación lleva su motivo en texto (<code>motivo_ceros</code>,
+<code>motivo_variacion</code>).</p>
+</section>
+
+<!-- ================================================================= -->
+<section id="estadistica">
+<h2>11 · Estadística: WOE, IV y Gini</h2>
+
+<h3 id="binning">11.1 Discretización (binning)</h3>
+
+<h4>Variables numéricas: cuantiles</h4>
+<div class="callout why">
+<strong>Por qué cuantiles y no intervalos de igual ancho</strong>
+Los intervalos de igual ancho colapsan cuando la distribución es asimétrica
+—lo habitual en montos, saldos y conteos—: casi toda la masa cae en el primer
+intervalo y el resto quedan casi vacíos. Un bin con 5 observaciones produce un
+WOE dominado por el ruido muestral y un IV inflado. Los cuantiles garantizan masa
+comparable por bin, y por tanto un WOE estimado con error similar en cada tramo.
+</div>
+
+<p>El número de bins se reduce automáticamente hasta que cada uno alcance
+<code>min_prop_bin</code> (3 % por defecto). Si la variable tiene ≤ 20 valores
+distintos, cada valor es su propio bin: no tiene sentido cuantilizar algo que
+solo toma tres valores. Los <strong>nulos forman su propio bin</strong>.</p>
+
+<div class="callout why">
+<strong>Por qué los nulos no se imputan</strong>
+La ausencia suele ser informativa. Que un cliente no reporte ingresos es en sí
+mismo una señal. Imputar con la mediana borraría esa información y además
+distorsionaría la distribución. Como bin propio, el nulo recibe su propio WOE y
+participa del IV con el peso que le corresponde.
+</div>
+
+<h4>Variables categóricas</h4>
+<p>Los nulos pasan a la categoría explícita <code>__NULOS__</code>. Las categorías
+raras y el exceso de cardinalidad se agrupan en <code>__OTROS__</code>.</p>
+
+<div class="callout bad">
+<strong>Un fallo real detectado y corregido</strong>
+En la primera implementación, <code>cat_alta_cardinalidad</code> (180 niveles al
+~0.55 % cada uno) producía <strong>IV = 0 con un solo bin</strong>: <em>todas</em>
+sus categorías caían bajo <code>min_prop_bin</code> y acababan en
+<code>__OTROS__</code>. La variable quedaba descartada por un artefacto del
+binning, no por falta de señal. La corrección: <code>MIN_NIVELES_CATEGORICOS = 8</code>
+protege siempre un núcleo de las categorías más frecuentes. Ahora produce 9 bins.
+</div>
+
+<div class="callout why">
+<strong>Por qué se limita la cardinalidad</strong>
+Una variable de cardinalidad casi única —un ID disfrazado de categoría— alcanzaría
+un IV «perfecto» en muestra y sería completamente inútil fuera de ella: cada
+categoría tendría una o dos observaciones y su WOE sería pura memorización.
+</div>
+
+<h3 id="woe">11.2 Weight of Evidence</h3>
+
+<p>Convención: <em>evento</em> = target 1 (lo que se quiere predecir);
+<em>no evento</em> = target 0.</p>
+
+<div class="formula">
+dist_evento_i     = eventos en i     / total de eventos
+dist_no_evento_i  = no eventos en i  / total de no eventos
+
+WOE_i = ln( dist_no_evento_i / dist_evento_i )
+</div>
+
+<p>El WOE mide, en escala logarítmica, cuánto se desvía la composición de un bin
+respecto de la mezcla poblacional. <strong>WOE = 0</strong> significa que el bin
+tiene la misma proporción de eventos que el total: no aporta información.</p>
+
+<h4>Corrección de continuidad</h4>
+<div class="formula">
+dist_evento_i = (eventos_i + c) / (total_eventos + c·k)     <span class="note">c = 0.5 (Haldane-Anscombe), k = número de bins</span>
+</div>
+
+<div class="callout why">
+<strong>Por qué la corrección es indispensable</strong>
+Sin ella, un bin sin ningún evento produce <code>ln(0) = −∞</code> y un IV
+infinito. Con ella el estimador queda ligeramente sesgado hacia cero, que es
+precisamente el sesgo <em>conservador</em> deseable: preferimos subestimar el poder
+predictivo que inventarlo.
+</div>
+
+<h3 id="iv">11.3 Information Value</h3>
+
+<div class="formula">
+IV_i = (dist_no_evento_i − dist_evento_i) · WOE_i
+
+IV   = Σ_i IV_i
+</div>
+
+<p>El IV pondera la desviación de cada bin <strong>por la masa que la respalda</strong>:
+un bin muy discriminante pero casi vacío contribuye poco. Por eso el IV mide poder
+predictivo <em>global</em> y no solo separación local. Formalmente es la
+<strong>divergencia de Jeffreys</strong> (Kullback-Leibler simetrizada) entre las
+distribuciones de eventos y no eventos a lo largo de los bins.</p>
+
+<h4>Escala de interpretación (Siddiqi, <em>Credit Risk Scorecards</em>)</h4>
+<div class="tablewrap">
+<table>
+<thead><tr><th>IV</th><th>Interpretación</th><th>Etiqueta</th></tr></thead>
+<tbody>
+<tr><td class="num">&lt; 0.02</td><td>Sin poder predictivo</td><td><code>SIN_PODER</code></td></tr>
+<tr><td class="num">0.02 – 0.10</td><td>Débil</td><td><code>DEBIL</code></td></tr>
+<tr><td class="num">0.10 – 0.30</td><td>Medio</td><td><code>MEDIO</code></td></tr>
+<tr><td class="num">0.30 – 0.50</td><td>Fuerte</td><td><code>FUERTE</code></td></tr>
+<tr><td class="num">&gt; 0.50</td><td class="bad-t">Sospechoso: revisar fuga de información</td><td><code>SOSPECHOSO_FUGA</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+<strong>Por qué un IV muy alto es mala noticia</strong>
+En la práctica, ninguna variable legítima separa un fenómeno real con IV &gt; 0.5.
+Cuando aparece, casi siempre significa <strong>fuga de información</strong>
+(<em>leakage</em>): la variable se construyó con datos posteriores al momento en
+que la predicción debería hacerse. En el panel de demostración,
+<code>var_fuga</code> alcanza IV = 11.4 y queda marcada automáticamente.
+</div>
+
+<h3 id="gini">11.4 Gini y AUC</h3>
+
+<div class="formula">
+Gini = 2 · AUC − 1
+
+<span class="note">AUC 0.5 (moneda al aire) → Gini 0 · AUC 1 (separación perfecta) → Gini 1</span>
+</div>
+
+<p>El Gini es la razón entre el área que la curva de Lorenz del modelo gana sobre
+la diagonal y el área máxima teórica. Mide capacidad de <strong>ordenar</strong>
+la muestra por riesgo.</p>
+
+<p>Se reportan tres variantes:</p>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Columna</th><th>Cómo se calcula</th><th>Para qué sirve</th></tr></thead>
+<tbody>
+<tr><td><code>gini_bruto</code></td><td>AUC sobre los valores crudos</td><td><strong>No ajusta parámetros</strong>: es el que se contrasta contra el ruido</td></tr>
+<tr><td><code>gini_woe</code></td><td>AUC sobre la proyección WOE</td><td>Capta relaciones no monótonas</td></tr>
+<tr><td><code>gini</code></td><td>máximo de ambos</td><td>Métrica de reporte y ranking</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué se toma el máximo y no el bruto</strong>
+Si la relación es monótona, ambos coinciden. Si no lo es, la transformación WOE
+la «endereza» y el bruto la subestima gravemente. Quedarse con el bruto
+castigaría injustamente a variables genuinamente predictivas. El caso
+<code>var_no_monotona</code> del demo lo ilustra: <strong>gini_bruto = 0.005</strong>
+frente a <strong>gini_woe = 0.362</strong>.
+</div>
+
+<p>Se reporta el <strong>valor absoluto</strong>: en selección de variables importa
+la magnitud de la discriminación, no su dirección. Una variable con Gini −0.45
+discrimina exactamente igual que una con +0.45. El signo se conserva aparte
+(<code>gini_signo</code>) porque permite detectar relaciones contraintuitivas que
+merecen revisión de negocio.</p>
+
+<h4>Target continuo</h4>
+<p>Se usa la correlación de rangos de <strong>Spearman</strong> como sustituto: vive
+en [−1, 1], la misma escala del Gini, y coincide con el D de Somers —la
+generalización natural del Gini— salvo por el tratamiento de empates. Se documenta
+explícitamente porque no es el Gini clásico de clasificación.</p>
+
+<h3 id="score">11.5 Score compuesto</h3>
+
+<div class="formula">
+score = w_gini · normalizar(Gini) + w_iv · normalizar(IV)     <span class="note">por defecto w_gini = w_iv = 0.5</span>
+</div>
+
+<div class="callout why">
+<strong>Por qué hay que normalizar antes de ponderar</strong>
+IV y Gini <strong>no son comparables en crudo</strong>. El Gini está acotado en
+[0, 1]; el IV <strong>no tiene cota superior</strong> (en el demo llega a 11.4).
+Sumarlos directamente dejaría que el IV dominara mecánicamente la decisión y el
+peso de 50 % sería ficticio.
+</div>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Método</th><th>Fórmula</th><th>Ventaja / desventaja</th></tr></thead>
+<tbody>
+<tr><td><code>minmax</code> <em>(defecto)</em></td><td>(x − mín) / (máx − mín)</td>
+    <td>Conserva distancias relativas · sensible a un outlier que comprime al resto</td></tr>
+<tr><td><code>rank</code></td><td>percentil del rango</td>
+    <td>Robusto a outliers · pierde la noción de «cuánto mejor»</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué combinar ambas métricas y no elegir una</strong>
+Miden cosas distintas y complementarias:
+<ul style="margin-top:8px">
+<li>El <strong>Gini</strong> mide ordenamiento global, pero penaliza las relaciones
+    no monótonas (en U, por tramos).</li>
+<li>El <strong>IV</strong> mide información acumulada bin a bin y sí capta esas
+    relaciones, pero puede inflarse con bins de poca masa.</li>
+</ul>
+Una variable fuerte en ambas es una apuesta segura; una fuerte en solo una merece
+revisión manual. La ponderación 50/50 evita privilegiar de antemano una visión
+sobre la otra.
+</div>
+
+<div class="callout warn">
+<strong>El score es relativo, no absoluto</strong>
+La normalización usa el mínimo y el máximo <em>observados en el conjunto evaluado</em>.
+Un <code>score_compuesto</code> de 0.6 no es comparable entre dos corridas con
+universos de variables distintos.
+</div>
+
+<h3 id="ruido">11.6 Piso de ruido estadístico</h3>
+
+<div class="callout bad">
+<strong>El problema que resuelve, detectado empíricamente</strong>
+En la primera corrida, las cinco variables <code>var_ruido_*</code> —ruido
+gaussiano puro, sin ninguna relación con el target— <strong>sobrevivían</strong>
+la fase 2. No era un error de código: era una limitación de los umbrales fijos.
+</div>
+
+<p>El IV es una estadística <em>estimada</em>. Incluso una variable sin ninguna
+relación con el target obtiene un IV estrictamente positivo, porque los bins nunca
+reparten los eventos en la proporción exacta de la población. Ese IV espurio
+<strong>crece con el número de bins</strong> y <strong>decrece con el tamaño
+muestral</strong>. Un umbral fijo de 0.02 ignora ambos efectos: es demasiado laxo
+con pocos datos y muchos bins, y demasiado estricto con muchos datos.</p>
+
+<h4>Derivación</h4>
+<p>Sean p<sub>i</sub> y q<sub>i</sub> las distribuciones del bin <em>i</em> entre
+eventos y no eventos, ambas estimando la misma proporción π<sub>i</sub> bajo la
+hipótesis nula de independencia, y sea c = 1/n₁ + 1/n₀.</p>
+
+<div class="formula">
+IV = Σ (q_i − p_i)·ln(q_i/p_i)  ≈  Σ (q_i − p_i)² / π_i     <span class="note">primer orden: ln(q/p) ≈ (q−p)/π</span>
+
+Var(q_i − p_i) = π_i (1 − π_i) · c
+
+⟹  E[IV | H₀] = (k − 1) · c        y        IV / c  ~  χ²(k − 1)
+
+piso_ruido_iv = c · χ²_{1−α}(k − 1)
+</div>
+
+<p>Análogamente, para el Gini se usa la varianza de Bamber / Hanley-McNeil del AUC
+bajo H₀:</p>
+
+<div class="formula">
+Var(AUC | H₀) = (n₁ + n₀ + 1) / (12 · n₁ · n₀)
+
+piso_ruido_gini = z_{1−α} · 2 · √Var(AUC | H₀)
+</div>
+
+<p>El <strong>umbral efectivo</strong> pasa a ser
+<code>max(umbral_fijo, piso_de_ruido)</code>: los parámetros del usuario siguen
+mandando como mínimo, pero el criterio se adapta al tamaño muestral y al número
+de bins de cada variable.</p>
+
+<div class="callout warn">
+<strong>Segundo hallazgo: el Gini del contraste debe ser el crudo</strong>
+Aun con el piso activo, el ruido seguía pasando. La regla de exclusión es un
+<strong>Y</strong> lógico (IV bajo <em>y</em> Gini bajo), y <code>gini_woe</code>
+rescataba a las variables aleatorias. El motivo: <code>gini_woe</code> se calcula
+sobre un mapeo WOE <strong>ajustado con los mismos datos</strong> —consume k−1
+grados de libertad— y está sesgado al alza. Compararlo contra un piso derivado del
+AUC no ajustado es incoherente.
+<br><br>
+<strong>Corrección:</strong> el contraste usa <code>gini_bruto</code>. Para
+categóricas no existe Gini no ajustado (no hay orden natural), así que no aportan
+evidencia independiente y la decisión recae en el IV, cuyo piso <em>sí</em>
+incorpora los grados de libertad.
+</div>
+
+<h4>Efecto medido en el panel de demostración</h4>
+<p>Con 850 eventos, 6.073 no eventos y 10 bins, α = 0.01:</p>
+<div class="formula">
+c = 1/850 + 1/6073 = 0.0013412
+piso_ruido_iv   = 0.0013412 · χ²₀.₉₉(9) = <strong>0.0291</strong>       <span class="note">frente al umbral fijo de 0.02</span>
+piso_ruido_gini = <strong>0.0492</strong>
+</div>
+
+<div class="callout ok">
+<strong>Resultado</strong>
+Las cinco variables <code>var_ruido_*</code> (IV entre 0.003 y 0.013) y
+<code>var_fija_entidad</code> quedan correctamente eliminadas. Ninguna variable
+genuinamente predictiva se perdió por la corrección.
+</div>
+
+<p>Parametrizable: <code>usar_piso_ruido</code>, <code>alpha_ruido</code> (0.01) y
+<code>bonferroni_ruido</code> (false por defecto — corregir por el número de
+variables reduce falsos positivos pero descarta señales genuinas muy débiles; en
+selección de variables suele preferirse el error de conservar de más).</p>
+</section>
+
+<!-- ================================================================= -->
+<section id="fase2">
+<h2>12 · Fase 2 · Pruebas bivariadas</h2>
+
+<h3>Tratamiento por tipo de variable</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Tipo</th><th>Binning</th><th>Gini</th></tr></thead>
+<tbody>
+<tr><td>Numérica / booleana</td><td>Cuantiles con masa mínima por bin; nulos como bin propio</td>
+    <td><code>max(gini_bruto, gini_woe)</code></td></tr>
+<tr><td>Categórica</td><td>Categorías directas; raras y exceso de cardinalidad → <code>__OTROS__</code></td>
+    <td>Solo sobre la proyección WOE (no hay orden natural)</td></tr>
+<tr><td>Fecha</td><td>Convertida a ordinal (días desde la época) y tratada como numérica</td>
+    <td>Igual que numérica</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Regla de exclusión</h3>
+<div class="formula">
+excluir  ⟺  ( IV &lt; umbral_iv_efectivo )  <strong>Y</strong>  ( Gini_crudo &lt; umbral_gini_efectivo )
+</div>
+
+<div class="callout why">
+<strong>Por qué «Y» y no «O»</strong>
+Usar un «O» eliminaría variables que una de las dos métricas capta bien. El caso
+típico es la relación no monótona: el Gini crudo se hunde mientras el IV se
+mantiene alto. En el demo, <code>var_no_monotona</code> tiene Gini crudo 0.005
+—rechazable— e IV 0.445 —claramente fuerte—. Con un «O» se habría perdido una de
+las variables más predictivas del conjunto.
+</div>
+
+<h3>Criterios adicionales</h3>
+<ul>
+  <li><strong>Sospecha de fuga</strong> (IV &gt; 0.50): por defecto solo se
+      <em>marca</em>. Eliminar automáticamente ocultaría un problema que el analista
+      necesita ver y resolver en el origen.</li>
+  <li><strong>Inestabilidad temporal</strong> (PSI &gt; 0.25): también solo se marca
+      por defecto.</li>
+  <li><strong>No evaluable</strong> (&lt; 30 observaciones no nulas): se excluye por
+      imposibilidad de estimación, con el motivo escrito. Nunca se inventa una
+      métrica.</li>
+  <li><strong>Top-N opcional</strong>: se aplica <em>después</em> de las reglas
+      absolutas.</li>
+</ul>
+</section>
+
+<!-- ================================================================= -->
+<section id="asociacion">
+<h2>13 · Medidas de asociación</h2>
+
+<p>Para que un <strong>único umbral</strong> (0.90) se aplique de forma homogénea a
+variables de tipos mixtos, las tres medidas se normalizan a [0, 1].</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Par</th><th>Medida</th><th>Rango</th></tr></thead>
+<tbody>
+<tr><td>numérica – numérica</td><td>|Spearman| (defecto) o |Pearson|</td><td>[0, 1]</td></tr>
+<tr><td>categórica – categórica</td><td>V de Cramér con corrección de Bergsma</td><td>[0, 1]</td></tr>
+<tr><td>numérica – categórica</td><td>Razón de correlación η</td><td>[0, 1]</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué Spearman por defecto y no Pearson</strong>
+Spearman es invariante a transformaciones monótonas y resistente a outliers, algo
+habitual en variables económicas (montos, saldos, ingresos con colas pesadas).
+Pearson solo capta relación lineal y se distorsiona gravemente con colas pesadas:
+dos variables idénticas salvo por una transformación logarítmica tendrían Pearson
+bajo y Spearman 1.
+</div>
+
+<h3>V de Cramér</h3>
+<div class="formula">
+V = √( χ² / ( n · min(r−1, k−1) ) )      <span class="note">derivada del χ² de independencia</span>
+</div>
+<p>La <strong>corrección de Bergsma</strong> es necesaria porque la V cruda está
+sesgada al alza cuando hay muchas categorías y pocas observaciones: sin ella
+declararía redundantes dos variables de alta cardinalidad sin relación real.</p>
+
+<h3>Razón de correlación η</h3>
+<div class="formula">
+η² = SS_entre_grupos / SS_total       <span class="note">es el R² de un ANOVA de un factor</span>
+</div>
+<p>Responde a: «¿cuánto de la dispersión de la variable numérica se explica por
+saber a qué categoría pertenece la observación?». Sirve para detectar que una
+<em>dummy</em> y su variable numérica de origen son la misma información.</p>
+
+<h3>Factor de inflación de la varianza (VIF)</h3>
+<div class="formula">
+VIF_j = 1 / (1 − R²_j)        <span class="note">R²_j = regresión de la variable j contra todas las demás</span>
+
+<span class="note">Se calcula eficientemente como el elemento diagonal j de la inversa de la matriz de correlación.</span>
+</div>
+
+<div class="callout why">
+<strong>Qué aporta el VIF sobre la correlación por pares</strong>
+Detecta colinealidad <strong>múltiple</strong>: una variable que es combinación
+lineal de <em>varias</em> otras sin estar fuertemente correlacionada con ninguna en
+particular. La correlación por pares es ciega a ese caso.
+<br><br>
+Se usa la <strong>pseudo-inversa</strong> porque, con variables casi redundantes,
+la matriz de correlación es singular y la inversa exacta no existe.
+</div>
+<p>Regla práctica: VIF &gt; 10 indica multicolinealidad severa.</p>
+</section>
+
+<!-- ================================================================= -->
+<section id="fase3">
+<h2>14 · Fase 3 · Pruebas multivariadas</h2>
+
+<div class="callout why">
+<strong>Por qué no basta con las fases 1 y 2</strong>
+Ambas juzgan cada variable en soledad. Dos variables pueden ser excelentes por
+separado y ser, aun así, <strong>la misma información</strong>. Mantener ambas:
+<ul style="margin-top:8px">
+<li>infla la varianza de los coeficientes en modelos lineales y logísticos — los
+    signos se vuelven inestables y la interpretación deja de ser fiable;</li>
+<li>reparte la importancia entre clones en modelos de árboles, escondiendo la
+    señal real;</li>
+<li>encarece el proceso productivo sin ganancia de desempeño.</li>
+</ul>
+</div>
+
+<h3>Umbral 0.90</h3>
+<p>Es el estándar para <em>redundancia severa</em>. Por debajo de 0.90 dos variables
+suelen conservar información propia suficiente para justificar mantener ambas.
+Parametrizable en <code>umbral_correlacion</code>.</p>
+
+<h3>Regla de exclusión</h3>
+<ol>
+  <li>Se listan todos los pares con asociación &gt; umbral, <strong>ordenados de
+      mayor a menor</strong>, de modo que las redundancias más flagrantes se
+      resuelven primero.</li>
+  <li>En cada par <strong>gana la variable con mayor <code>score_compuesto</code></strong>
+      de la fase 2.</li>
+  <li>Si hay empate exacto, desempata el <strong>IV</strong> (la métrica que capta
+      relaciones no monótonas).</li>
+  <li>Si una de las dos ya fue excluida por un par anterior, el par se marca como
+      «ya resuelto» y <strong>no se elimina también la otra</strong>.</li>
+</ol>
+
+<div class="callout why">
+<strong>Por qué el paso 4 importa</strong>
+Sin él, una cadena de tres variables mutuamente correlacionadas eliminaría las
+tres y no quedaría ninguna representante de esa información.
+</div>
+
+<p>El anexo <code>A2_Pares_Redundantes</code> registra <strong>cada par</strong> con
+su asociación, los scores de ambas, la conservada, la eliminada y el criterio
+textual exacto que decidió.</p>
+</section>
+
+<!-- ================================================================= -->
+<section id="fase4">
+<h2>15 · Fase 4 · Boruta / BorutaShap (opcional)</h2>
+
+<h3>Cómo funciona el algoritmo</h3>
+<p>Boruta es un método <strong><em>all-relevant</em></strong>: no busca el
+subconjunto mínimo suficiente, sino <em>todas</em> las variables que aportan
+información.</p>
+<ol>
+  <li>Por cada variable real se crea una <strong>shadow feature</strong>: una copia
+      con sus valores <strong>permutados al azar</strong>. Conserva la distribución
+      marginal pero destruye toda relación con el target: es <em>ruido con la misma
+      forma</em>.</li>
+  <li>Se entrena un Random Forest sobre reales + sombras.</li>
+  <li>Una variable real «gana el round» si su importancia supera la
+      <strong>máxima</strong> importancia entre todas las sombras de esa iteración.</li>
+  <li>Los aciertos siguen una Bin(n_iter, 0.5) bajo H₀ de irrelevancia. Se contrasta
+      con <strong>corrección de Bonferroni</strong> y cada variable termina como
+      <span class="ok-t">Confirmed</span>, <span class="bad-t">Rejected</span> o
+      <span class="warn-t">Tentative</span>.</li>
+</ol>
+
+<div class="callout why">
+<strong>Por qué la corrección de Bonferroni</strong>
+Se realizan tantos contrastes simultáneos como variables. Con 50 variables y
+α = 0.05 se esperarían ~2.5 falsos positivos solo por azar.
+</div>
+
+<h3>Por qué es contraste y no reemplazo</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Situación</th><th>Lectura</th></tr></thead>
+<tbody>
+<tr><td>IV alto + Boruta confirma</td><td class="ok-t">Señal robusta</td></tr>
+<tr><td>IV alto + Boruta rechaza</td><td>La variable está <strong>subsumida</strong> por otra</td></tr>
+<tr><td>IV bajo + Boruta confirma</td><td>Aporta solo en <strong>interacción</strong> — invisible para una prueba bivariada</td></tr>
+<tr><td>IV bajo + Boruta rechaza</td><td>Coinciden en descartar</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Boruta mide importancia <strong>condicional</strong> (en presencia de las demás);
+IV y Gini miden poder <strong>marginal</strong>. Ninguno es «más correcto»: las
+discrepancias <em>son</em> la información valiosa. Por eso la fase 4
+<strong>nunca modifica la selección final</strong>.</p>
+
+<div class="callout warn">
+<strong>Reservas sobre Boruta en datos de panel</strong>
+<ul style="margin-top:8px">
+<li>Las observaciones <strong>no son independientes</strong>: una misma entidad
+    aparece en varios periodos, lo que puede optimizar la importancia estimada.</li>
+<li>La importancia del Random Forest está <strong>sesgada hacia variables de alta
+    cardinalidad</strong>.</li>
+<li>Una variable con <strong>fuga</strong> acapara casi toda la importancia y hunde
+    a las demás bajo el umbral de las sombras. Ver <a href="#verificacion">sección 20</a>.</li>
+</ul>
+</div>
+
+<h3>Motores y degradación</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Motor</th><th>Descripción</th></tr></thead>
+<tbody>
+<tr><td><code>borutapy</code></td><td>Librería externa. Depende de alias de numpy retirados (<code>np.float</code>, <code>np.int</code>, <code>np.bool</code>), que se restauran para poder importarla sin modificar su código.</td></tr>
+<tr><td><code>borutashap</code></td><td>Importancia vía valores SHAP: más fiel, bastante más caro.</td></tr>
+<tr><td><code>nativo</code></td><td><strong>Implementación incluida en el proyecto.</strong> Solo necesita scikit-learn y scipy.</td></tr>
+<tr><td><code>auto</code> <em>(defecto)</em></td><td>Intenta <code>borutapy → borutashap → nativo</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout ok">
+<strong>Por qué existe la implementación nativa</strong>
+BorutaPy no siempre instala limpiamente en versiones recientes de Python y numpy.
+La implementación nativa garantiza que la fase 4 nunca quede inoperante mientras
+el núcleo del proyecto esté instalado.
+</div>
+
+<h3>Detalles de preparación</h3>
+<ul>
+  <li><strong>Nulos numéricos</strong> → mediana (robusta ante colas pesadas), y se
+      registra la imputación por variable.</li>
+  <li><strong>Categóricas</strong> → codificación <em>ordinal por frecuencia</em>, no
+      one-hot: el one-hot multiplicaría la dimensión y con ella el número de
+      sombras, encareciendo Boruta. Los árboles particionan un código ordinal sin
+      problema, con la salvedad —documentada— de que el orden impuesto es
+      arbitrario.</li>
+  <li><strong>Submuestreo estratificado por periodo</strong> para acotar el costo,
+      en lugar de muestreo aleatorio simple que sobrerrepresentaría periodos.</li>
+  <li>Se ejecuta sobre los sobrevivientes de la <strong>fase 1</strong>, no de la
+      fase 3, para que pueda opinar también sobre lo que las fases 2 y 3
+      descartaron: ahí es donde el contraste resulta informativo.</li>
+</ul>
+</section>
+
+<!-- ================================================================= -->
+<section id="estabilidad">
+<h2>16 · Estabilidad temporal</h2>
+
+<h3>Population Stability Index</h3>
+<div class="formula">
+PSI = Σ_i (p_i − q_i) · ln(p_i / q_i)     <span class="note">p = periodo base, q = periodo de comparación</span>
+</div>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>PSI</th><th>Interpretación</th></tr></thead>
+<tbody>
+<tr><td class="num">&lt; 0.10</td><td class="ok-t">Población estable</td></tr>
+<tr><td class="num">0.10 – 0.25</td><td class="warn-t">Cambio moderado, vigilar</td></tr>
+<tr><td class="num">&gt; 0.25</td><td class="bad-t">Cambio poblacional severo</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>IV por periodo</h3>
+<p>Se calcula el IV dentro de cada periodo usando los <strong>mismos bins
+globales</strong>.</p>
+
+<div class="callout why">
+<strong>Por qué no se re-binea por periodo</strong>
+Re-binear haría que los tramos fueran distintos en cada periodo y los IV
+resultantes no serían comparables entre sí: se estaría midiendo la variación del
+binning, no la del poder predictivo.
+</div>
+
+<p>Se reportan media, mínimo, máximo, desviación y <strong>coeficiente de variación
+del IV</strong>. Un CV alto significa que la variable «funciona solo a ratos».
+Los periodos con menos de 30 observaciones se omiten: su IV sería ruido.</p>
+
+<div class="callout why">
+<strong>Por qué esto es esencial en panel y no en corte transversal</strong>
+Una variable con IV alto en la muestra agrupada puede deber todo ese poder a un
+único periodo atípico. Si su distribución se desplaza en el tiempo, el modelo
+entrenado con ella se degradará en producción. Por defecto la inestabilidad
+<strong>marca pero no elimina</strong> (<code>excluir_por_inestabilidad: false</code>):
+es información para el analista, no una decisión automática.
+</div>
+</section>
+
+<!-- ================================================================= -->
+<section id="excel">
+<h2>17 · La bitácora Excel</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Hoja</th><th>Contenido</th></tr></thead>
+<tbody>
+<tr><td><code>00_Resumen</code></td><td>Corrida, entradas, dataset, embudo, criterios, calidad, conclusiones</td></tr>
+<tr><td><code>00_Embudo</code></td><td>Entran / eliminadas / sobreviven por fase, con el criterio aplicado</td></tr>
+<tr><td><code>01_Diagnostico_Inicial</code></td><td>Perfil completo de cada columna</td></tr>
+<tr><td><code>01b–01d</code></td><td>Cabecera del dataset · validaciones del panel · target por periodo</td></tr>
+<tr><td><code>02_Univariado</code></td><td><strong>Todas</strong> las columnas originales con flags y motivos</td></tr>
+<tr><td><code>03_Bivariado</code></td><td>IV, Gini, score, pisos de ruido, PSI, advertencias</td></tr>
+<tr><td><code>04_Multivariado</code></td><td>Asociación máxima, VIF, redundancias, selección final</td></tr>
+<tr><td><code>05_Boruta</code></td><td>Solo si <code>usar_boruta = true</code></td></tr>
+<tr><td><code>06_Seleccion_Final</code></td><td>Lista final ordenada por poder predictivo</td></tr>
+<tr><td><code>06b_Descartadas</code></td><td>Cada descarte con <strong>fase de salida y motivo</strong></td></tr>
+<tr><td><code>07_Parametros</code> · <code>07b_Dependencias</code></td><td>Reproducibilidad: config exacta y versiones</td></tr>
+<tr><td><code>08_Bitacora_Log</code></td><td>Log cronológico completo</td></tr>
+<tr><td><code>09_Diccionario</code></td><td>Significado de cada columna de cada hoja</td></tr>
+<tr><td><code>A1–A3</code></td><td>Matriz de asociación · pares redundantes · tablas WOE</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué el Excel incluye su propio diccionario y su propio log</strong>
+Para que sea <strong>autocontenido</strong>. Quien lo reciba dentro de seis meses no
+debería necesitar el código fuente ni el archivo de log para entender qué
+significa cada campo y reconstruir qué ocurrió en la corrida.
+</div>
+
+<h3>Formato</h3>
+<ul>
+  <li>Semáforo condicional: <span class="ok-t">verde</span> = retenida/confirmada,
+      <span class="bad-t">rojo</span> = eliminada/rechazada,
+      <span class="warn-t">ámbar</span> = advertencia que no elimina.</li>
+  <li>Filtros automáticos y paneles congelados en todas las hojas.</li>
+  <li>Formato numérico por tipo: porcentaje, 4 decimales o entero según la columna.</li>
+  <li>Saneamiento previo: Excel no admite infinitos ni celdas de más de 32.767
+      caracteres. Se normaliza una sola vez, centralizadamente.</li>
+  <li>Un fallo al escribir o formatear <strong>una</strong> hoja no pierde el resto.</li>
+</ul>
+</section>
+
+<!-- ================================================================= -->
+<section id="dataset-final">
+<h2>18 · Dataset final exportado</h2>
+
+<p>Además del Excel de bitácora, el pipeline exporta <strong>un dataset</strong>
+listo para entrenar un modelo, con exactamente estas columnas y en este orden:</p>
+
+<div class="formula">
+columna_id · columna_tiempo · columna_target · &lt;solo las variables que superaron las fases 1, 2 y 3&gt;
+</div>
+
+<p>En la corrida de referencia: <code>id_entidad</code>, <code>periodo</code>,
+<code>target</code> + las 8 variables de la selección final = <strong>11
+columnas</strong>, 6.923 filas (todas las del panel, sin filtrar observaciones),
+guardado en <code>outputs/bitacora_feature_selection_dataset_final.csv</code>.</p>
+
+<div class="callout why">
+<strong>Por qué es un artefacto separado del Excel y no una hoja más</strong>
+La bitácora está pensada para <strong>auditar el proceso</strong>: incluye
+columnas descartadas, flags, motivos y métricas de cada fase. El dataset final
+está pensado para <strong>alimentar un modelo</strong>: debe contener
+únicamente las columnas que ese modelo va a consumir. Mezclar ambos propósitos
+en un mismo archivo obligaría a quien entrena el modelo a filtrar columnas a
+mano, con el riesgo de arrastrar por error una variable descartada.
+</div>
+
+<h3>Reglas de construcción</h3>
+<ul>
+  <li>Las columnas de rol van <strong>siempre primero</strong>, en el orden
+      id → tiempo → target, para que el archivo sea legible de inmediato y no
+      haya ambigüedad sobre cuál es la llave del panel.</li>
+  <li>Solo se incluyen las variables con <code>flg_seleccion_final = 1</code> de
+      la fase 3 (es decir, las que superaron univariado, bivariado <em>y</em>
+      multivariado). El resultado de Boruta —contraste, no criterio de
+      inclusión— no filtra este archivo.</li>
+  <li>Se exportan <strong>todas las filas</strong> del panel tal como llegaron
+      tipificadas, sin imputar ni descartar observaciones: esa decisión le
+      corresponde a la etapa de modelado, no a la selección de variables.</li>
+  <li>Si ninguna variable supera las tres fases, no se genera el archivo — un
+      dataset con solo las tres columnas de rol no tendría utilidad— y se deja
+      constancia en el log.</li>
+</ul>
+
+<h3>Configuración</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Parámetro</th><th>Defecto</th><th>Efecto</th></tr></thead>
+<tbody>
+<tr><td><code>exportar_dataset_final</code></td><td><code>true</code></td>
+    <td>En <code>false</code>, se omite esta exportación (el Excel se genera igual)</td></tr>
+<tr><td><code>ruta_dataset_final</code></td><td><code>""</code></td>
+    <td>Vacío ⟶ se <strong>deriva</strong> junto a <code>ruta_salida_excel</code>
+        como <code>&lt;mismo_nombre&gt;_dataset_final.&lt;formato&gt;</code></td></tr>
+<tr><td><code>formato_dataset_final</code></td><td><code>"csv"</code></td>
+    <td><code>"csv"</code> o <code>"parquet"</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué la ruta se deriva junto al Excel por defecto</strong>
+Ambos artefactos —bitácora y dataset— pertenecen a la <em>misma corrida</em>. Al
+compartir directorio y nombre base, queda inmediatamente visible a qué bitácora
+corresponde cada dataset exportado, sin depender de que el usuario recuerde
+mantenerlos sincronizados manualmente.
+</div>
+</section>
+
+<!-- ================================================================= -->
+<section id="no-supervisado">
+<h2>19 · Selección no supervisada (fallback sin target)</h2>
+
+<p>Todo lo descrito hasta aquí (fase 2 bivariada, Boruta) asume que existe una
+columna <code>columna_target</code>. Esa suposición deja de sostenerse en un
+caso de uso real y frecuente: <strong>detección de anomalías no supervisada</strong>,
+donde el objetivo final —alimentar un <strong>Isolation Forest</strong> o un
+<strong>autoencoder variacional (VAE)</strong>— no tiene ninguna etiqueta contra
+la cual medir IV, Gini, o entrenar el Random Forest de contraste de Boruta.
+Esta sección documenta el flujo alternativo que el pipeline activa
+automáticamente en ese caso, con la misma exigencia de evidencia empírica que
+el resto del proyecto — incluyendo un error real de calibración estadística
+que se detectó y corrigió durante el desarrollo de esta misma fase, descrito
+sin editar la evidencia.</p>
+
+<h3 id="ns-fork">19.1 El fork: cuándo y por qué</h3>
+
+<h4>Explicación técnica</h4>
+<p>Inmediatamente después de cargar y tipificar el dataset, el pipeline
+comprueba una única condición:
+<code>columna_target in df.columns</code> (implementada en
+<code>validaciones.target_disponible()</code>). El resultado se guarda en
+<code>ReporteValidacion.modo_supervisado</code> y es la <strong>única</strong>
+vez que se inspecciona el dataframe para tomar esta decisión — el resto del
+pipeline simplemente respeta ese valor.</p>
+<ul>
+  <li><strong>Target presente</strong> → flujo sin cambios: fase 0 → fase 1 →
+      fase 2 (IV/Gini) → fase 3 → fase 4 Boruta (opcional).</li>
+  <li><strong>Target ausente</strong> → fase 0 → fase 1 (idéntica, no usa
+      target) → <strong>fase 2 alternativa</strong> (esta sección) → fase 3
+      (idéntica) → <strong>sin fase 4</strong>: Boruta exige un target contra
+      el que entrenar el Random Forest de contraste, y no existe forma honesta
+      de improvisar uno sin inventar una variable — algo que este proyecto
+      evita explícitamente por instrucción directa.</li>
+</ul>
+<p>Las fases 0, 1 y 3 son <strong>idénticas</strong> en ambas ramas: ninguna de
+las tres usa el target. Solo la fase 2 (y, como consecuencia, la fase 4) exige
+una etiqueta y necesita un reemplazo.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+No hay que configurar nada para activar este modo: basta con apuntar
+<code>ruta_dataset</code> a un archivo que no tenga la columna declarada en
+<code>columna_target</code>. El pipeline lo detecta, lo anuncia en el log y en
+la hoja <code>00_Resumen</code>, y ejecuta el flujo completo igual — con Excel,
+estadísticas y resúmenes, tal como se pidió: el fallback no es un modo
+degradado, es un segundo camino igual de completo.
+</div>
+
+<h3 id="ns-laplaciano">19.2 Laplacian Score: la base de la fase 2 alternativa</h3>
+
+<h4>Explicación técnica</h4>
+<p>El reemplazo de IV/Gini es el <strong>Laplacian Score</strong> (He, Cai y
+Niyogi, NeurIPS 2005, <em>"Laplacian Score for Feature Selection"</em>). No es
+una elección arbitraria: es el método de filtro no supervisado más citado y
+más replicado de la literatura de selección de variables —la revisión de Li,
+Cheng, Wang, Morstatter, Trevino, Tang y Liu (<em>"Feature Selection: A Data
+Perspective"</em>, ACM Computing Surveys 50(6), 2018) lo trata como referencia
+central de la familia de métodos espectrales/basados en grafos—, y es
+aplicable directamente a datos mixtos (numéricos y categóricos, vía la misma
+codificación ordinal que ya usa Boruta en este proyecto).</p>
+
+<p><strong>Idea central:</strong> construir un grafo de vecindad (k-NN) sobre
+el conjunto de variables candidatas, con la intuición de que puntos
+"parecidos" en ese espacio conjunto deberían estarlo también en cualquier
+variable individual que sea realmente relevante para la estructura de los
+datos. Formalmente, con grafo de pesos <code>S</code> (núcleo gaussiano sobre
+las <code>k</code> distancias más cercanas), matriz de grados
+<code>D = diag(Σⱼ Sᵢⱼ)</code> y Laplaciano <code>L = D − S</code>:</p>
+
+<div class="formula">
+f~ = f − (fᵀD·1 / 1ᵀD·1) · 1                    <span class="note">centrado ponderado por grado</span>
+L_r(f) = (f~ᵀ L f~) / (f~ᵀ D f~)                 <span class="note">Laplacian Score de la variable f</span>
+</div>
+
+<p>Cuanto <strong>menor</strong> el resultado, más "suave" es la variable
+sobre el grafo (puntos vecinos tienen valores parecidos) → más relevante.
+Expandiendo <code>L = D − S</code>, se obtiene una forma equivalente más
+intuitiva: <code>L_r(f) = 1 − (f~ᵀ S f~)/(f~ᵀ D f~)</code>. Para una variable
+perfectamente suave sobre el grafo, el término resta ≈1 y el score → 0; para
+una variable sin relación alguna con la estructura de vecindad, el término
+resta ≈0 (los productos cruzados se cancelan en promedio) y el score → 1. Esa
+intuición —0 es estructura, 1 es ruido— es la que se explota en 19.3 para
+construir el piso de ruido.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Es el análogo no supervisado de "¿esta variable separa bien a los eventos de
+los no eventos?" (IV/Gini), pero sin eventos: la pregunta pasa a ser "¿esta
+variable se comporta de forma parecida en observaciones que ya son parecidas
+en todas las demás variables?" Una variable de fraude real (monto de
+transacción, por ejemplo) normalmente sí lo hace: las transacciones "vecinas"
+en el resto de variables (mismo canal, hora, cliente similar) tienden a tener
+montos parecidos. Una columna de ruido puro no tiene ninguna razón para
+comportarse así.
+</div>
+
+<h3 id="ns-circularidad">19.3 La corrección leave-one-out: un error real, detectado y corregido</h3>
+
+<div class="callout bad">
+<strong>Lo que se detectó al validar con datos de ruido puro construidos a propósito</strong>
+La primera versión de esta fase construía <strong>un único grafo</strong> con
+todas las variables candidatas juntas, y evaluaba cada variable —real y
+permutada— contra ese mismo grafo compartido. Al probarla con 10 columnas de
+ruido gaussiano puro sin ninguna relación entre sí (un experimento de
+verificación, no el dataset del proyecto), <strong>ninguna se excluyó nunca</strong>:
+el piso de ruido por permutación resultaba sistemáticamente peor
+(~0.99) que el score real de <em>cualquier</em> columna, incluidas las de
+ruido puro (~0.25-0.28). El test no tenía ningún poder de discriminación.
+</div>
+
+<p><strong>La causa: circularidad.</strong> Si la columna <em>j</em> participa
+en la construcción del grafo, el grafo "sabe" dónde están los valores de
+<em>j</em>, y <em>j</em> termina pareciendo artificialmente suave sobre su
+propio grafo. Es un efecto geométrico de los grafos k-NN euclidianos con pocas
+decenas de dimensiones (se atenúa solo cuando la dimensión crece mucho más
+que la muestra): con pocas variables, ser "vecino" en el espacio conjunto
+implica, casi por construcción, ser parecido en cada variable individual que
+contribuyó a definir esa vecindad — incluidas las que son puro ruido. Barajar
+los valores de <em>j</em> y volver a medir contra ESE MISMO grafo no corrige
+nada, porque el grafo se construyó usando el valor <strong>sin barajar</strong>
+de <em>j</em>: el piso de ruido queda inflado por la misma circularidad que se
+quería descartar.</p>
+
+<p><strong>La corrección: grafo <em>leave-one-out</em>.</strong> El grafo que
+puntúa la columna <em>j</em> se construye <strong>solo con las demás
+columnas</strong>. Así <em>j</em> se evalúa contra una noción de "vecindad" que
+no sabe nada de sus propios valores, real o permutada por igual, y la
+comparación vuelve a ser honesta.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Experimento (n=2000, k=10)</th><th>Antes (grafo compartido)</th><th>Después (leave-one-out)</th></tr></thead>
+<tbody>
+<tr><td>10 columnas de ruido puro — score real</td><td>0.25 – 0.28</td><td>0.98 – 1.01</td></tr>
+<tr><td>10 columnas de ruido puro — piso de ruido</td><td>~0.99 (peor que TODO score real)</td><td>~0.99 (consistente con el score real)</td></tr>
+<tr><td>Ruido puro correctamente NO excluido</td><td>0 de 10</td><td>9 de 10 <span class="note">(1 falso positivo, tasa esperable a alpha=0.05)</span></td></tr>
+<tr><td>2 señales de cluster inyectadas — score real</td><td>—</td><td>0.197 – 0.207</td></tr>
+<tr><td>Señales reales correctamente detectadas</td><td>—</td><td>2 de 2 (p=0.000)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>El costo de la corrección es real: en vez de un grafo, se construyen tantos
+grafos como variables candidatas (cada uno con una menos). Es el precio de que
+el test sea válido; el submuestreo de <code>laplacian_max_filas</code> acota
+ese costo en paneles grandes, y en la práctica (23 variables, 6.923 filas) el
+costo adicional fue de segundos, no minutos.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Este hallazgo es la razón por la que el proyecto valida cada criterio con
+datos donde se conoce la respuesta correcta de antemano (columnas de ruido
+puro construidas a propósito, señales con estructura inyectada a propósito)
+antes de confiar en él con datos reales. Un test que "nunca excluye nada"
+podría pasar desapercibido durante meses en producción —simplemente se vería
+como "todas las variables son buenas"— hasta que alguien comparara sus
+resultados contra un método distinto y se preguntara por qué nunca coinciden.
+</div>
+
+<h3 id="ns-dispersion">19.4 Dispersión robusta y entropía (ranking, no exclusión)</h3>
+
+<h4>Explicación técnica</h4>
+<p>El Laplacian Score decide la <strong>exclusión</strong> (vía su piso de
+ruido). Un segundo componente, la <strong>dispersión robusta</strong>, no
+excluye nada por sí solo: solo ordena (desempate en la fase 3) a las variables
+que ya sobrevivieron. La justificación es específica del objetivo declarado
+—Isolation Forest y VAE—: las anomalías, por definición, viven en las colas de
+la distribución marginal de una variable (Aggarwal, <em>Outlier Analysis</em>,
+2ª ed., Springer 2016, capítulos 1-2). Una variable con colas pesadas
+(curtosis positiva alta) tiene más "espacio" donde un valor inusual puede
+manifestarse que una variable de distribución comprimida.</p>
+<p>Para categóricas, la curtosis no está definida (no hay orden numérico), así
+que se sustituye por la <strong>entropía de Shannon normalizada</strong>
+(<code>H/log₂k</code>): una variable con categorías muy desbalanceadas (que ya
+sobrevivió la fase 1, así que no es un caso extremo) aporta menos estructura
+distinguible que una con categorías repartidas de forma más pareja.</p>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Entre dos variables con Laplacian Score parecido, se prefiere la que tiene
+más "recorrido" para que aparezca un valor atípico. No es una garantía de que
+esa variable vaya a detectar fraude —eso lo decide el modelo final, no esta
+fase—, es una apuesta razonable sobre cuál de las dos tiene más chance de ser
+útil para ese propósito específico.
+</div>
+
+<h3 id="ns-redundancia">19.5 Por qué la redundancia importa más en este flujo</h3>
+
+<h4>Explicación técnica</h4>
+<p>Sin el filtro de poder predictivo marginal (IV/Gini) que en la rama
+supervisada ya elimina buena parte del ruido antes de llegar a la fase 3, la
+prueba de correlación/VIF es la <strong>única</strong> barrera que queda contra
+variables duplicadas. Eso es crítico para los dos modelos objetivo:</p>
+<ul>
+  <li><strong>Isolation Forest</strong> (Liu, Ting y Zhou, ICDM 2008,
+      <em>"Isolation Forest"</em>) selecciona al azar la variable de cada
+      corte. Si 10 de 50 variables son copias correlacionadas de la misma
+      señal, esa señal recibe efectivamente 10 veces más probabilidad de ser
+      elegida en cada corte que una variable única e igual de informativa,
+      sesgando el bosque sin que el algoritmo lo sepa. Además, Aggarwal y Yu
+      (SIGMOD 2001, <em>"Outlier detection for high dimensional data"</em>)
+      mostraron que en alta dimensión los outliers solo son visibles en
+      <strong>subespacios</strong> de baja dimensión: arrastrar variables
+      redundantes o irrelevantes diluye exactamente esos subespacios.</li>
+  <li><strong>VAE</strong> (An y Cho, 2015, SNU Data Mining Center,
+      <em>"Variational Autoencoder based Anomaly Detection using
+      Reconstruction Probability"</em>): la pérdida de reconstrucción
+      (típicamente MSE) se reparte entre todas las variables de entrada; un
+      grupo de variables correlacionadas "vota" varias veces por la misma
+      señal en esa pérdida, sesgando al encoder a reconstruirla bien mientras
+      ignora variables raras pero más informativas sobre el fenómeno
+      anómalo.</li>
+</ul>
+<p>El panorama general de por qué la dimensionalidad y la relevancia de las
+variables son un problema de fondo en detección de anomalías —no una
+particularidad de este proyecto— está documentado en dos revisiones amplias y
+muy citadas: Chandola, Banerjee y Kumar (<em>"Anomaly Detection: A Survey"</em>,
+ACM Computing Surveys 41(3), 2009) para los métodos clásicos, y Pang, Shen,
+Cao y van den Hengel (<em>"Deep Learning for Anomaly Detection: A Review"</em>,
+ACM Computing Surveys 54(2), 2021) y Ruff et al. (<em>"A Unifying Review of
+Deep and Shallow Anomaly Detection"</em>, Proceedings of the IEEE 109(5), 2021)
+para los métodos profundos, incluidos los autoencoders.</p>
+
+<div class="callout warn">
+<strong>Interpretación práctica</strong>
+En la rama supervisada, un analista que se salta la fase 3 "porque el IV ya
+filtró lo importante" comete un error moderado. En esta rama, saltarse la fase
+3 es mucho más grave: no hay ningún otro filtro que impida que el Isolation
+Forest o el VAE terminen, en la práctica, sobre-representando una única señal
+disfrazada de varias columnas.
+</div>
+
+<h3 id="ns-alternativas">19.6 Alternativas consideradas y por qué no se implementaron</h3>
+
+<h4>Explicación técnica</h4>
+<p>La literatura ofrece opciones más sofisticadas que se evaluaron y se
+descartaron para esta fase, no por ser inferiores, sino por no encajar con el
+principio explícito de este proyecto de no crear variables ni hacer ingeniería
+de características en la etapa de selección:</p>
+<ul>
+  <li><strong>Wrapper no supervisado basado en clustering</strong> (Dy y
+      Brodley, <em>"Feature Selection for Unsupervised Learning"</em>, JMLR 5,
+      2004): usa un criterio de separabilidad de un clustering EM como
+      objetivo para seleccionar variables. Es un método <em>wrapper</em>
+      (ajusta un modelo completo por cada subconjunto evaluado), más costoso
+      computacionalmente que un filtro como el Laplacian Score y menos
+      transparente para auditar bin a bin.</li>
+  <li><strong>Concrete Autoencoders</strong> (Abid, Balın y Zou,
+      <em>"Concrete Autoencoders for Differentiable Feature Selection and
+      Reconstruction"</em>, ICML 2019): aprende, dentro de un autoencoder, una
+      capa de selección diferenciable (relajación de Gumbel-Softmax) que
+      elige las variables que mejor reconstruyen el resto. Es, notablemente,
+      un método <strong>nativo de autoencoders</strong> —el mismo paradigma
+      que el VAE objetivo de este proyecto— y probablemente la dirección más
+      moderna si en el futuro se quisiera una selección acoplada directamente
+      al modelo final. No se implementó aquí porque exige entrenar una red
+      neuronal completa dentro de la etapa de selección de variables, un salto
+      de complejidad y de dependencias (framework de deep learning) que
+      contradice el resto del diseño de este pipeline: estadística
+      transparente y auditable, no una caja negra adicional antes de la caja
+      negra del modelo final.</li>
+</ul>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+El Laplacian Score con piso de ruido por permutación es la opción que mejor
+equilibra rigor estadístico, costo computacional y auditabilidad —se puede
+explicar en una hoja de Excel, no en un notebook con una red entrenada. Si el
+proyecto evoluciona hacia acoplar la selección directamente al VAE final, el
+Concrete Autoencoder es la referencia a revisar primero.
+</div>
+
+<h3 id="ns-validacion">19.7 Validación empírica sobre el panel de este proyecto</h3>
+
+<p>Con la corrección de 19.3 aplicada, se ejecutó el flujo completo sobre el
+mismo panel sintético de este proyecto (6.923 filas, 400 entidades × 18
+periodos), eliminando la columna target para forzar el fallback:</p>
+
+<div class="formula">
+28 candidatas → 23 (fase 1, idéntica a la rama supervisada)
+             → 18 (fase 2: Laplacian Score, piso de ruido, alpha=0.05, 200 permutaciones)
+             → 14 seleccionadas (fase 3: redundancia, |asociación| > 0.90)
+Sin fase 4 (Boruta no aplica sin target)          Duración: ~8 s
+</div>
+
+<p>De las 5 variables excluidas en la fase 2, 3 son columnas de ruido puro
+construidas a propósito en el generador sintético (<code>var_ruido_1</code>,
+<code>var_ruido_2</code>, <code>var_ruido_4</code>) y una es
+<code>var_no_monotona</code>, cuya única señal real está en su relación
+CUADRÁTICA con el target ausente — en el espacio de las demás variables, sin
+ese target, es indistinguible de ruido, y el resultado es correcto: el
+Laplacian Score no puede detectar una relación con algo que no está en los
+datos.</p>
+
+<div class="callout warn">
+<strong>Dos columnas de ruido sobreviven — y es el comportamiento esperado, no un defecto</strong>
+<code>var_ruido_3</code> y <code>var_ruido_5</code> no se excluyeron en esta
+corrida puntual. Con 23 variables evaluadas a alpha=0.05 sin corrección, se
+esperan en promedio ~1.15 falsos positivos solo por azar (23 × 0.05); land en
+2-3 sobre un puñado de columnas verdaderamente nulas es una desviación
+estadísticamente razonable de ese promedio, no evidencia de que el método
+falle. Activar <code>bonferroni_ruido_laplaciano</code> corrige esto —se
+verificó que, con esa opción, el umbral efectivo baja a alpha/23≈0.0022 y el
+número de exclusiones sube a 7— a costa de necesitar más permutaciones para
+que el p-valor tenga resolución suficiente (ver 19.8).
+</div>
+
+<p>Las variables mejor rankeadas por score compuesto en esta corrida —
+<code>var_combinacion_lineal</code>, <code>var_score_riesgo</code>,
+<code>var_clon_score</code>, <code>var_ratio_endeudamiento</code>,
+<code>var_utilizacion_linea</code>— son, no por casualidad, variables
+correlacionadas entre sí o construidas como combinación de otras: es
+exactamente el tipo de estructura conjunta que el Laplacian Score está
+diseñado para detectar, y coincide con las variables que la rama supervisada
+identifica como más predictivas cuando el target sí está presente (comparar
+con <a href="#verificacion">§20</a>) — una señal cruzada de que ambas ramas,
+pese a partir de información distinta, convergen en las mismas variables de
+fondo.</p>
+
+<h3 id="ns-config">19.8 Configuración y recomendaciones</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Parámetro</th><th>Defecto</th><th>Efecto</th></tr></thead>
+<tbody>
+<tr><td><code>laplacian_k_vecinos</code></td><td>10</td><td>Vecinos del grafo k-NN. Más vecinos suaviza el grafo; menos lo hace más sensible a ruido local.</td></tr>
+<tr><td><code>laplacian_max_filas</code></td><td>20.000</td><td>Submuestreo del grafo en paneles grandes (mismo patrón que <code>boruta_max_filas</code>).</td></tr>
+<tr><td><code>laplacian_n_permutaciones</code></td><td>200</td><td>Resolución del p-valor = 1/n. Con 20 (valor inicial descartado tras validar), solo se podía rechazar si TODAS las permutaciones eran peores que el real — un criterio inviablemente estricto.</td></tr>
+<tr><td><code>alpha_ruido_laplaciano</code></td><td>0.05</td><td>Significancia del contraste contra el azar.</td></tr>
+<tr><td><code>bonferroni_ruido_laplaciano</code></td><td>false</td><td>Corrige alpha por el número de variables evaluadas. Si se activa con muchas variables candidatas, subir también <code>laplacian_n_permutaciones</code> (la resolución del p-valor debe ser más fina que el alpha corregido).</td></tr>
+<tr><td><code>peso_laplaciano</code> / <code>peso_dispersion</code></td><td>0.50 / 0.50</td><td>Ponderación del score compuesto (ranking para la fase 3).</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout ok">
+<strong>Interpretación práctica</strong>
+Para la mayoría de los casos, los valores por defecto no necesitan tocarse. Si
+el dataset tiene muchas más de 30-40 variables candidatas y se quiere un
+criterio más conservador (menos falsos positivos, al costo de posibles falsos
+negativos en señales débiles), activar <code>bonferroni_ruido_laplaciano</code>
+y subir <code>laplacian_n_permutaciones</code> proporcionalmente —una regla
+práctica es <code>n_permutaciones ≥ n_variables / alpha</code>— es la forma
+correcta de hacerlo, en vez de simplemente bajar <code>alpha_ruido_laplaciano</code>
+a mano sin considerar cuántas variables se están evaluando a la vez.
+</div>
+
+</section>
+
+<!-- ================================================================= -->
+<section id="verificacion">
+<h2>20 · Verificación empírica (rama supervisada)</h2>
+
+<p>El panel sintético de demostración incluye <strong>a propósito</strong> una
+variable por cada criterio, lo que permite comprobar que cada regla hace lo que
+promete. Resultado de la última corrida (6.923 filas × 31 columnas, 400 entidades
+× 18 periodos):</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Variable sembrada</th><th>Debe detectarla</th><th>Resultado</th></tr></thead>
+<tbody>
+<tr><td><code>var_constante</code></td><td>Fase 1.2 · varianza cero</td><td class="ok-t">✓ eliminada</td></tr>
+<tr><td><code>var_casi_constante</code></td><td>Fase 1.2 · dominancia 99.6 %</td><td class="ok-t">✓ eliminada</td></tr>
+<tr><td><code>var_cv_bajo</code></td><td>Fase 1.2 · CV despreciable</td><td class="ok-t">✓ eliminada</td></tr>
+<tr><td><code>var_muchos_ceros</code> (97 %)</td><td>Fase 1.1</td><td class="ok-t">✓ eliminada</td></tr>
+<tr><td><code>var_muchos_nulos</code> (96 %)</td><td>Fase 1.1</td><td class="ok-t">✓ eliminada</td></tr>
+<tr><td><code>var_ruido_1..5</code></td><td>Fase 2 · piso de ruido</td><td class="ok-t">✓ las 5 eliminadas</td></tr>
+<tr><td><code>var_fija_entidad</code></td><td>Fase 2 + ICC ≈ 1</td><td class="ok-t">✓ eliminada y marcada como invariante</td></tr>
+<tr><td><code>cat_alta_cardinalidad</code></td><td>Fase 2 · agrupación</td><td class="ok-t">✓ 9 bins, eliminada por IV</td></tr>
+<tr><td><code>var_texto_numerico</code></td><td>Tipificación + fase 3</td><td class="ok-t">✓ convertida y detectada (ρ = 1.000)</td></tr>
+<tr><td><code>var_clon_score</code></td><td>Fase 3 · redundancia</td><td class="ok-t">✓ par resuelto (ρ = 0.9998)</td></tr>
+<tr><td><code>var_no_monotona</code></td><td>Fase 2 · IV capta lo que el Gini pierde</td><td class="ok-t">✓ retenida (IV 0.445 / Gini crudo 0.005)</td></tr>
+<tr><td><code>var_fuga</code></td><td>Fase 2 · sospecha de fuga</td><td class="ok-t">✓ marcada (IV 11.4)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>El embudo</h3>
+<div class="formula">
+28 candidatas  →  23 (fase 1)  →  12 (fase 2)  →  <strong>8 seleccionadas</strong> (fase 3)
+Boruta: 7 confirmadas · 16 rechazadas          Duración: ~25 s (4 s sin Boruta)
+</div>
+
+<h3>Un hallazgo que el propio informe explica</h3>
+<div class="callout bad">
+<strong>Boruta rechazó predictores legítimos</strong>
+<code>var_n_atrasos_12m</code> y <code>var_monto_deuda</code> son predictores reales
+del proceso generador y aparecen como <em>Rejected</em>. No es un error del
+algoritmo: <code>var_fuga</code> (Gini 0.999) acapara casi toda la importancia del
+bosque y hunde a las demás por debajo del umbral de las <em>shadow features</em>.
+<br><br>
+El resumen ejecutivo emite esta advertencia <strong>automáticamente</strong>:
+hay que eliminar las variables con fuga y volver a ejecutar la fase 4 antes de
+interpretar sus rechazos.
+</div>
+
+<h3>Comportamientos correctos que podrían parecer errores</h3>
+<ul>
+  <li><strong><code>cat_sector</code> excluida con IV = 0.019872 frente al umbral
+      0.02.</strong> Es un predictor real, pero cae en el límite exacto de la
+      frontera de Siddiqi. El motivo queda escrito en <code>06b_Descartadas</code>;
+      basta bajar <code>umbral_iv_minimo</code> si el negocio la quiere.</li>
+  <li><strong><code>var_clon_score</code> desplazó a <code>var_score_riesgo</code></strong>
+      (la original) porque midió un score compuesto marginalmente mayor. Es la regla
+      especificada aplicada al pie de la letra; ambas figuran en la bitácora.</li>
+</ul>
+
+<h3>Pruebas de robustez ejecutadas</h3>
+<ul>
+  <li><span class="ok-t">✓</span> Corrida con las tres columnas de rol renombradas
+      (<code>malo_90d</code> / <code>rut_cliente</code> / <code>mes_cierre</code>),
+      solo con flags de CLI: resultado idéntico sin tocar código.</li>
+  <li><span class="ok-t">✓</span> <code>usar_boruta=false</code> → hoja
+      <code>05_Boruta</code> correctamente ausente.</li>
+  <li><span class="ok-t">✓</span> Llave <code>id+tiempo</code> duplicada → bloquea con
+      mensaje explícito y llaves de ejemplo.</li>
+  <li><span class="ok-t">✓</span> Columna target inexistente → bloquea listando las
+      disponibles.</li>
+  <li><span class="ok-t">✓</span> <code>umbral_correlacion=1.5</code> → bloquea en la
+      validación de configuración.</li>
+</ul>
+</section>
+
+<!-- ================================================================= -->
+<section id="limitaciones">
+<h2>21 · Limitaciones conocidas</h2>
+
+<ol>
+  <li><strong>No hay validación fuera de tiempo.</strong> Todas las métricas se
+      calculan en muestra. La recomendación de entrenar en los primeros periodos y
+      evaluar en los últimos aparece en las conclusiones del Excel, pero el pipeline
+      no la ejecuta. Es la extensión de mayor valor pendiente.</li>
+  <li><strong>El score compuesto es relativo</strong> al conjunto evaluado: no es
+      comparable entre corridas con universos de variables distintos.</li>
+  <li><strong>La eliminación por correlación es <em>greedy</em>.</strong> Resuelve los
+      pares de mayor a menor asociación, lo que no garantiza el óptimo global. Un
+      <em>clustering</em> de variables sería más robusto.</li>
+  <li><strong>Boruta asume independencia entre observaciones</strong>, supuesto que
+      el panel viola. Se documenta, no se corrige.</li>
+  <li><strong>El binning es no supervisado</strong> (cuantiles). Un binning
+      supervisado por árbol o con restricción de monotonía podría extraer más IV.</li>
+  <li><strong>Las categóricas se codifican ordinalmente</strong> para Boruta; el
+      orden impuesto es arbitrario aunque los árboles puedan particionarlo.</li>
+  <li><strong>Target multiclase</strong> se reduce a un esquema binario y se
+      documenta la simplificación.</li>
+</ol>
+</section>
+
+<!-- ================================================================= -->
+<section id="glosario">
+<h2>22 · Glosario</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Término</th><th>Definición</th></tr></thead>
+<tbody>
+<tr><td><strong>AUC</strong></td><td>Área bajo la curva ROC. Probabilidad de que un caso con evento reciba mayor puntaje que uno sin evento.</td></tr>
+<tr><td><strong>Bin</strong></td><td>Tramo de la discretización de una variable.</td></tr>
+<tr><td><strong>Divergencia de Jeffreys</strong></td><td>KL simetrizada. Es la forma matemática exacta del IV y del PSI.</td></tr>
+<tr><td><strong>Fuga (<em>leakage</em>)</strong></td><td>Variable construida con información posterior al momento de la predicción.</td></tr>
+<tr><td><strong>Gini</strong></td><td>2·AUC − 1. Capacidad de ordenar la muestra por riesgo.</td></tr>
+<tr><td><strong>Haldane-Anscombe</strong></td><td>Corrección de continuidad (+0.5 a los conteos) que evita ln(0).</td></tr>
+<tr><td><strong>ICC</strong></td><td>Correlación intraclase. Proporción de varianza atribuible a diferencias entre entidades.</td></tr>
+<tr><td><strong>IV</strong></td><td>Information Value. Información acumulada bin a bin sobre el target.</td></tr>
+<tr><td><strong>Panel</strong></td><td>Datos con doble índice entidad × tiempo.</td></tr>
+<tr><td><strong>Panel balanceado</strong></td><td>Toda entidad observada en todo periodo.</td></tr>
+<tr><td><strong>Pooled</strong></td><td>Métrica calculada sobre todas las filas ignorando la estructura de panel.</td></tr>
+<tr><td><strong>PSI</strong></td><td>Population Stability Index. Desplazamiento de una distribución entre dos muestras.</td></tr>
+<tr><td><strong>Shadow feature</strong></td><td>Copia permutada al azar de una variable: ruido con su misma distribución marginal.</td></tr>
+<tr><td><strong>V de Cramér</strong></td><td>Asociación entre categóricas, normalizada a [0, 1] desde el χ².</td></tr>
+<tr><td><strong>VIF</strong></td><td>Factor de inflación de la varianza. Detecta colinealidad múltiple.</td></tr>
+<tr><td><strong>WOE</strong></td><td>Weight of Evidence. Desviación logarítmica de un bin respecto de la mezcla poblacional.</td></tr>
+<tr><td><strong>η (eta)</strong></td><td>Razón de correlación. R² de un ANOVA de un factor.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<footer>
+  <p><strong>Feature Selection para Datos de Panel</strong> · Documentación técnica ·
+     Generada junto al proyecto y verificada contra una corrida real.</p>
+  <p>Archivos relacionados: <code>README.md</code> (resumen del trabajo) ·
+     <code>CONTEXTO.md</code> (continuidad del proyecto) ·
+     <code>config.yaml</code> (parámetros) ·
+     <code>outputs/bitacora_feature_selection.xlsx</code> (evidencia).</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+  const b = document.getElementById('tt');
+  b.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const next = cur ? (cur === 'dark' ? 'light' : 'dark') : (sysDark ? 'light' : 'dark');
+    document.documentElement.setAttribute('data-theme', next);
+  });
+  // Resalta la sección visible en el índice lateral.
+  const links = [...document.querySelectorAll('nav a')];
+  const obs = new IntersectionObserver(es => {
+    es.forEach(e => {
+      if (!e.isIntersecting) return;
+      links.forEach(a => a.style.fontWeight = '');
+      const act = links.find(a => a.getAttribute('href') === '#' + e.target.id);
+      if (act) act.style.fontWeight = '700';
+    });
+  }, { rootMargin: '-10% 0px -80% 0px' });
+  document.querySelectorAll('section[id]').forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
