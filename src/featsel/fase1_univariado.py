@@ -26,6 +26,16 @@ eliminacion que no requieren mirar el target:
     - IQR ~ 0 y percentiles comprimidos      -> la distribucion colapsa en un
       punto aunque tenga colas extremas
 
+Excepcion: variables dicotomicas (flags 0/1)
+    Un flag (ej. "tuvo_atraso", "es_moroso") suele tener incidencia baja por
+    diseno: 99% ceros y 1% unos no es ruido, es la naturaleza del evento que
+    describe. Aplicarle los mismos umbrales de ceros/dominancia que a una
+    variable continua la eliminaria precisamente por ser informativa. Por
+    eso, una columna cuyos unicos valores no nulos son {0, 1} se RETIENE
+    siempre, incluso si dispara alguno de los criterios anteriores; el
+    motivo que habria gatillado la eliminacion queda igual registrado en la
+    bitacora para que la excepcion sea auditable.
+
 Nada se elimina sin dejar el motivo escrito: cada flag va acompanado de una
 columna de texto con la razon exacta.
 """
@@ -39,6 +49,20 @@ from .config import ConfigPipeline
 from .logging_utils import obtener_logger
 
 LOGGER = obtener_logger("fase1")
+
+
+def _es_dicotomica(fila: pd.Series) -> bool:
+    """True si la columna es un flag 0/1 (ambos valores presentes).
+
+    Se apoya en minimo/maximo ya calculados en la fase 0: exigir
+    ``minimo == 0`` y ``maximo == 1`` a la vez implica que la columna tiene
+    ambos valores (una constante en 0 o en 1 no cumple la condicion), asi que
+    no hace falta re-inspeccionar los datos crudos.
+    """
+    if fila.get("tipo_inferido") not in ("NUMERICA", "BOOLEANA"):
+        return False
+    minimo, maximo = fila.get("minimo", np.nan), fila.get("maximo", np.nan)
+    return pd.notna(minimo) and pd.notna(maximo) and minimo == 0 and maximo == 1
 
 
 def _evaluar_ceros_nulos(fila: pd.Series, cfg: ConfigPipeline) -> tuple[int, str]:
@@ -154,6 +178,7 @@ def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
             filas_flags.append(
                 {
                     "flg_eliminado_ceros": 0, "flg_eliminado_variacion": 0,
+                    "flg_dicotomica": 0,
                     "flg_seleccionada_univariada": 0,
                     "flg_constante": 0, "flg_std_baja": 0, "flg_cv_bajo": 0,
                     "flg_categoria_dominante": 0, "flg_percentiles_comprimidos": 0,
@@ -165,21 +190,29 @@ def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
 
         f_ceros, m_ceros = _evaluar_ceros_nulos(fila, cfg)
         f_var, m_var, sub = _evaluar_variacion(fila, cfg)
+        es_dico = _es_dicotomica(fila)
 
-        seleccionada = int(f_ceros == 0 and f_var == 0)
-        if seleccionada:
-            decision = "RETENIDA"
-        elif f_ceros and f_var:
-            decision = "ELIMINADA_CEROS_Y_VARIACION"
-        elif f_ceros:
-            decision = "ELIMINADA_CEROS_NULOS"
+        if es_dico and (f_ceros or f_var):
+            # Excepcion dicotomica: se retiene pese a los flags, pero el
+            # motivo que los disparo queda escrito para que sea auditable.
+            seleccionada = 1
+            decision = "RETENIDA_DICOTOMICA"
         else:
-            decision = "ELIMINADA_BAJA_VARIACION"
+            seleccionada = int(f_ceros == 0 and f_var == 0)
+            if seleccionada:
+                decision = "RETENIDA"
+            elif f_ceros and f_var:
+                decision = "ELIMINADA_CEROS_Y_VARIACION"
+            elif f_ceros:
+                decision = "ELIMINADA_CEROS_NULOS"
+            else:
+                decision = "ELIMINADA_BAJA_VARIACION"
 
         filas_flags.append(
             {
                 "flg_eliminado_ceros": f_ceros,
                 "flg_eliminado_variacion": f_var,
+                "flg_dicotomica": int(es_dico),
                 "flg_seleccionada_univariada": seleccionada,
                 **sub,
                 "motivo_ceros": m_ceros,
@@ -194,19 +227,23 @@ def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
     uni["pct_ceros+nulos"] = uni["pct_ceros_mas_nulos"]
 
     # Orden: primero las retenidas, luego las eliminadas, luego los roles.
-    orden = {"RETENIDA": 0, "ELIMINADA_CEROS_NULOS": 1, "ELIMINADA_BAJA_VARIACION": 2,
-             "ELIMINADA_CEROS_Y_VARIACION": 3}
+    orden = {"RETENIDA": 0, "RETENIDA_DICOTOMICA": 1, "ELIMINADA_CEROS_NULOS": 2,
+             "ELIMINADA_BAJA_VARIACION": 3, "ELIMINADA_CEROS_Y_VARIACION": 4}
     uni["_orden"] = uni["decision_univariada"].map(orden).fillna(9)
     uni = uni.sort_values(["_orden", "columna"]).drop(columns="_orden").reset_index(drop=True)
 
     n_cand = int((uni["rol"] == "CANDIDATA").sum())
-    n_ceros = int(uni["flg_eliminado_ceros"].sum())
-    n_var = int(uni["flg_eliminado_variacion"].sum())
+    n_ceros = int((uni["decision_univariada"] == "ELIMINADA_CEROS_NULOS").sum())
+    n_var = int((uni["decision_univariada"] == "ELIMINADA_BAJA_VARIACION").sum())
+    n_ambos = int((uni["decision_univariada"] == "ELIMINADA_CEROS_Y_VARIACION").sum())
+    n_dico = int((uni["decision_univariada"] == "RETENIDA_DICOTOMICA").sum())
     n_sel = int(uni["flg_seleccionada_univariada"].sum())
 
     LOGGER.info("Candidatas evaluadas          : %d", n_cand)
     LOGGER.info("Eliminadas por ceros+nulos    : %d", n_ceros)
     LOGGER.info("Eliminadas por baja variacion : %d", n_var)
+    LOGGER.info("Eliminadas por ambos criterios: %d", n_ambos)
+    LOGGER.info("Retenidas por excepcion dicotomica (flag 0/1): %d", n_dico)
     LOGGER.info("Sobrevivientes de la fase 1   : %d (%.1f%% de las candidatas)",
                 n_sel, 100 * n_sel / n_cand if n_cand else 0)
 

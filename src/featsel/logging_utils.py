@@ -89,3 +89,30 @@ def configurar_logging(
 def obtener_logger(nombre: str) -> logging.Logger:
     """Devuelve un logger hijo del arbol `featsel`."""
     return logging.getLogger(f"featsel.{nombre}")
+
+
+class BarraProgreso:
+    """Barra de progreso de texto plano para seguir el avance del pipeline.
+
+    No redibuja la linea con ``\\r``: cada fase ya vuelca varias lineas de
+    log a stdout mientras corre, asi que una barra "en el mismo lugar"
+    quedaria cortada por ese ruido. En su lugar imprime una linea nueva por
+    paso completado; el resultado es un historial legible de que se
+    ejecuto y cuanto falta, sin depender de ninguna libreria externa.
+    """
+
+    def __init__(self, pasos: list[str], ancho: int = 30) -> None:
+        self._pasos = pasos
+        self._total = len(pasos) or 1
+        self._ancho = ancho
+        self._actual = 0
+
+    def avanzar(self, etiqueta: str | None = None) -> None:
+        """Marca completado el siguiente paso e imprime la barra actualizada."""
+        self._actual = min(self._actual + 1, self._total)
+        if etiqueta is None:
+            etiqueta = self._pasos[self._actual - 1] if self._actual <= len(self._pasos) else ""
+        pct = self._actual / self._total
+        llenado = int(round(pct * self._ancho))
+        barra = "#" * llenado + "-" * (self._ancho - llenado)
+        print(f"  [{barra}] {self._actual}/{self._total} ({pct:.0%})  {etiqueta}", flush=True)

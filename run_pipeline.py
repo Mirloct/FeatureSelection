@@ -32,7 +32,14 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import warnings
 from pathlib import Path
+
+# Silenciadas a proposito: son ruido de dependencias (FutureWarning/
+# DeprecationWarning de pandas, numpy, sklearn, Boruta) que no aportan nada
+# a la lectura de la bitacora y ensucian la consola. Los errores reales
+# siguen interrumpiendo el proceso; esto solo calla avisos.
+warnings.filterwarnings("ignore")
 
 # El paquete vive en src/: se agrega al path para poder ejecutar el script
 # directamente sin necesidad de instalar el proyecto.

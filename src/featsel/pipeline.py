@@ -58,7 +58,7 @@ from . import (
     validaciones,
 )
 from .config import ConfigPipeline
-from .logging_utils import ManejadorMemoria, obtener_logger
+from .logging_utils import BarraProgreso, ManejadorMemoria, obtener_logger
 
 LOGGER = obtener_logger("pipeline")
 
@@ -211,11 +211,16 @@ def _construir_resumen(
     # --- E. Criterios de exclusion mas importantes ------------------------
     if not uni.empty:
         cand = uni[uni["rol"] == "CANDIDATA"]
+        # Las dicotomicas (flags 0/1) pueden disparar estos criterios pero se
+        # RETIENEN por excepcion (ver fase1_univariado): se excluyen del
+        # conteo de "eliminadas" para que la cifra refleje lo que realmente
+        # salio del dataset, y se reportan aparte.
+        cand_no_dico = cand[cand["decision_univariada"] != "RETENIDA_DICOTOMICA"]
         add("E. Criterios", f"Eliminadas por ceros+nulos >= {cfg.umbral_ceros_nulos_efectivo:.0%}",
-            int(cand["flg_eliminado_ceros"].sum()),
+            int(cand_no_dico["flg_eliminado_ceros"].sum()),
             "Variables sin contenido informativo en casi toda la muestra.")
         add("E. Criterios", "Eliminadas por baja variacion",
-            int(cand["flg_eliminado_variacion"].sum()),
+            int(cand_no_dico["flg_eliminado_variacion"].sum()),
             "Constantes, casi constantes o con una categoria dominante.")
         for sub, etiqueta in (
             ("flg_constante", "  ...de ellas, constantes puras"),
@@ -224,7 +229,12 @@ def _construir_resumen(
             ("flg_percentiles_comprimidos", "  ...con percentiles comprimidos"),
         ):
             if sub in cand.columns:
-                add("E. Criterios", etiqueta, int(cand[sub].sum()), "Subcriterio de la fase 1.2.")
+                add("E. Criterios", etiqueta, int(cand_no_dico[sub].sum()), "Subcriterio de la fase 1.2.")
+        if "flg_dicotomica" in cand.columns:
+            add("E. Criterios", "Retenidas por excepcion dicotomica (flag 0/1)",
+                int((cand["decision_univariada"] == "RETENIDA_DICOTOMICA").sum()),
+                "Superaban ceros/dominancia/variacion pero un flag 0/1 desbalanceado "
+                "es senal, no ruido: se conservan igual.")
     if not biv.empty:
         add("E. Criterios", "Eliminadas por IV y Gini por debajo del umbral",
             int(((biv["flg_iv_bajo"] == 1) & (biv["flg_gini_bajo"] == 1)).sum()),
@@ -565,10 +575,16 @@ def _construir_resumen_no_supervisado(
 
     if not uni.empty:
         cand = uni[uni["rol"] == "CANDIDATA"]
+        cand_no_dico = cand[cand["decision_univariada"] != "RETENIDA_DICOTOMICA"]
         add("E. Criterios", f"Eliminadas por ceros+nulos >= {cfg.umbral_ceros_nulos_efectivo:.0%}",
-            int(cand["flg_eliminado_ceros"].sum()), "Identico a la rama supervisada.")
+            int(cand_no_dico["flg_eliminado_ceros"].sum()), "Identico a la rama supervisada.")
         add("E. Criterios", "Eliminadas por baja variacion",
-            int(cand["flg_eliminado_variacion"].sum()), "Identico a la rama supervisada.")
+            int(cand_no_dico["flg_eliminado_variacion"].sum()), "Identico a la rama supervisada.")
+        if "flg_dicotomica" in cand.columns:
+            add("E. Criterios", "Retenidas por excepcion dicotomica (flag 0/1)",
+                int((cand["decision_univariada"] == "RETENIDA_DICOTOMICA").sum()),
+                "Superaban ceros/dominancia/variacion pero un flag 0/1 desbalanceado "
+                "es senal, no ruido: se conservan igual.")
     if not rel.empty:
         add("E. Criterios", "Sin estructura distinguible del ruido (Laplacian Score)",
             int(rel["flg_sin_estructura"].sum()),
@@ -812,12 +828,29 @@ def ejecutar(
                 "el Random Forest de contraste y no existe en este dataset."
             )
 
+    pasos_barra = ["Fase 0 - Diagnostico inicial", "Fase 1 - Univariado"]
+    if rep_val.modo_supervisado:
+        pasos_barra += [
+            "Fase 2 - Bivariado (IV/Gini)", "Fase 3 - Multivariado",
+            "Fase 4 - Boruta" if cfg.usar_boruta else "Fase 4 - Boruta (omitida, usar_boruta=False)",
+            "Exportacion (Excel + dataset final)",
+        ]
+    else:
+        pasos_barra += [
+            "Fase 2 - Relevancia no supervisada (Laplacian Score)",
+            "Fase 3 - Multivariado", "Exportacion (Excel + dataset final)",
+        ]
+    barra = BarraProgreso(pasos_barra)
+    print(f"\n>> Ejecutando pipeline ({len(pasos_barra)} pasos)...")
+
     # === FASE 0 (identica en ambos flujos) =================================
     diag = fase0_diagnostico.ejecutar(df, cfg, tipos, rep_val)
+    barra.avanzar()
 
     # === FASE 1 (identica en ambos flujos: no usa el target) ===============
     uni = fase1_univariado.ejecutar(diag["diagnostico"], cfg)
     sobrevivientes_1 = fase1_univariado.obtener_sobrevivientes(uni)
+    barra.avanzar()
 
     deps_df = (
         pd.DataFrame(reporte_bootstrap.a_filas()) if reporte_bootstrap is not None else pd.DataFrame()
@@ -831,9 +864,11 @@ def ejecutar(
             df, cfg, tipos, sobrevivientes_1, rep_val.tipo_target
         )
         sobrevivientes_2 = fase2_bivariado.obtener_sobrevivientes(biv)
+        barra.avanzar()
 
         multi, matriz, pares = fase3_multivariado.ejecutar(df, cfg, tipos, sobrevivientes_2, biv)
         seleccion_final = fase3_multivariado.obtener_seleccion_final(multi)
+        barra.avanzar()
 
         # Se ejecuta sobre los sobrevivientes de la FASE 1, no sobre la seleccion
         # final: asi Boruta puede opinar tambien sobre las variables que las fases
@@ -841,6 +876,7 @@ def ejecutar(
         boruta, boruta_meta = fase4_boruta.ejecutar(
             df, cfg, tipos, sobrevivientes_1, rep_val.tipo_target, biv, multi
         )
+        barra.avanzar()
 
         segundos = time.perf_counter() - t0
         resumen = _construir_resumen(cfg, df, uni, biv, multi, boruta_meta, rep_val,
@@ -871,9 +907,11 @@ def ejecutar(
         # =====================================================================
         rel = fase2_no_supervisado.ejecutar(df, cfg, tipos, sobrevivientes_1, diag["diagnostico"])
         sobrevivientes_2 = fase2_no_supervisado.obtener_sobrevivientes(rel)
+        barra.avanzar()
 
         multi, matriz, pares = fase3_multivariado.ejecutar(df, cfg, tipos, sobrevivientes_2, rel)
         seleccion_final = fase3_multivariado.obtener_seleccion_final(multi)
+        barra.avanzar()
 
         boruta_meta = {
             "ejecutada": False,
@@ -916,6 +954,7 @@ def ejecutar(
     resultados["ruta_dataset_final"] = _exportar_dataset_final(
         df, cfg, resultados["variables_seleccionadas"], modo_supervisado=rep_val.modo_supervisado
     )
+    barra.avanzar()
 
     LOGGER.info("#" * 78)
     LOGGER.info("# PROCESO COMPLETADO en %.2f segundos (modo %s)", resultados["segundos"],
