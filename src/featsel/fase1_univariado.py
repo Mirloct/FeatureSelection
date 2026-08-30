@@ -36,6 +36,26 @@ Excepcion: variables dicotomicas (flags 0/1)
     motivo que habria gatillado la eliminacion queda igual registrado en la
     bitacora para que la excepcion sea auditable.
 
+Avisos de CATEGORICAS (no eliminan, solo documentan)
+    Dos situaciones propias de variables categoricas afectan a la codificacion
+    rio abajo (one-hot, WOE, target encoding) sin ser, por si solas, motivo de
+    descarte, asi que se reportan como aviso en vez de aplicar un umbral duro:
+
+    - **Dominancia en zona gris** (``umbral_dominancia_aviso``=90% <= dom <
+      ``umbral_dominancia``=99%): la categoria mayoritaria no llega al 99% que
+      la haria "casi constante" (eso SI elimina, ver 1.2), pero codificarla
+      deja a la clase minoritaria con pocas observaciones -> riesgo de sesgo
+      hacia la clase dominante.
+    - **Cardinalidad alta** (``n_unicos`` > ``umbral_alta_cardinalidad``=20):
+      el one-hot deja de ser practico (explosion dimensional, columnas casi
+      vacias). El pipeline ya evita ese problema mas adelante (fase 2 agrupa
+      en ``__OTROS__``; la rama sin target usa codigo ordinal por frecuencia),
+      pero se avisa desde la fase 1 para que la granularidad se revise con
+      informacion, no en silencio. Ver docs/documentacion.html para el
+      panorama completo de tecnicas de codificacion por cardinalidad
+      (target encoding, hashing, embeddings) y por que este proyecto no usa
+      one-hot puro.
+
 Nada se elimina sin dejar el motivo escrito: cada flag va acompanado de una
 columna de texto con la razon exacta.
 """
@@ -131,6 +151,53 @@ def _evaluar_variacion(fila: pd.Series, cfg: ConfigPipeline) -> tuple[int, str, 
     return flag, "; ".join(motivos), sub
 
 
+def _evaluar_avisos_categoricos(fila: pd.Series, cfg: ConfigPipeline) -> tuple[dict, str]:
+    """Avisos exclusivos de CATEGORICAS que NO eliminan, solo documentan.
+
+    Ninguno de los dos mueve ``flg_seleccionada_univariada``: son advertencias
+    para quien vaya a codificar la variable rio abajo (one-hot, WOE, target
+    encoding), no criterios de descarte de la fase 1.
+
+    1. **Dominancia en zona gris** (``umbral_dominancia_aviso`` <= dom <
+       ``umbral_dominancia``): la categoria mayoritaria no llega al 99% que
+       la haria "casi constante", pero un one-hot/WOE sobre esta variable deja
+       a la clase minoritaria con pocas observaciones -> riesgo de sesgo hacia
+       la clase dominante o de sobreajuste en la minoritaria.
+    2. **Cardinalidad alta** (``n_unicos`` > ``umbral_alta_cardinalidad``): el
+       one-hot deja de ser practico. El pipeline ya evita ese problema (fase 2
+       agrupa en ``__OTROS__`` via ``max_categorias``; la rama no supervisada
+       usa codigo ordinal por frecuencia), pero se avisa igual para que la
+       decision de fondo -si la granularidad de la variable es util- se tome
+       con informacion.
+    """
+    sub = {"flg_dominancia_alta": 0, "flg_alta_cardinalidad": 0}
+    motivos: list[str] = []
+
+    if fila.get("tipo_inferido") != "CATEGORICA":
+        return sub, ""
+
+    dom = fila.get("pct_valor_mas_frecuente", np.nan)
+    if pd.notna(dom) and cfg.umbral_dominancia_aviso <= dom < cfg.umbral_dominancia:
+        sub["flg_dominancia_alta"] = 1
+        motivos.append(
+            f"la categoria '{fila.get('valor_mas_frecuente')}' concentra {dom:.2%} de los "
+            f"no nulos (zona de aviso >= {cfg.umbral_dominancia_aviso:.0%}): el resto queda "
+            "disperso en pocas observaciones, riesgo de sesgo hacia la clase dominante al "
+            "codificar (one-hot/WOE)."
+        )
+
+    n_unicos = fila.get("n_unicos", np.nan)
+    if pd.notna(n_unicos) and n_unicos > cfg.umbral_alta_cardinalidad:
+        sub["flg_alta_cardinalidad"] = 1
+        motivos.append(
+            f"{int(n_unicos)} categorias distintas > {cfg.umbral_alta_cardinalidad}: one-hot no "
+            "es recomendable (dilucion / explosion dimensional); el pipeline agrupa las menos "
+            "frecuentes en __OTROS__ (fase 2) o usa codigo ordinal por frecuencia (rama sin target)."
+        )
+
+    return sub, "; ".join(motivos)
+
+
 def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
     """Ejecuta la fase univariada sobre la tabla de diagnostico.
 
@@ -182,7 +249,8 @@ def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
                     "flg_seleccionada_univariada": 0,
                     "flg_constante": 0, "flg_std_baja": 0, "flg_cv_bajo": 0,
                     "flg_categoria_dominante": 0, "flg_percentiles_comprimidos": 0,
-                    "motivo_ceros": "", "motivo_variacion": "",
+                    "flg_dominancia_alta": 0, "flg_alta_cardinalidad": 0,
+                    "motivo_ceros": "", "motivo_variacion": "", "aviso_categorico": "",
                     "decision_univariada": f"NO_APLICA ({fila['rol']})",
                 }
             )
@@ -190,6 +258,7 @@ def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
 
         f_ceros, m_ceros = _evaluar_ceros_nulos(fila, cfg)
         f_var, m_var, sub = _evaluar_variacion(fila, cfg)
+        sub_aviso, m_aviso = _evaluar_avisos_categoricos(fila, cfg)
         es_dico = _es_dicotomica(fila)
 
         if es_dico and (f_ceros or f_var):
@@ -215,8 +284,10 @@ def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
                 "flg_dicotomica": int(es_dico),
                 "flg_seleccionada_univariada": seleccionada,
                 **sub,
+                **sub_aviso,
                 "motivo_ceros": m_ceros,
                 "motivo_variacion": m_var,
+                "aviso_categorico": m_aviso,
                 "decision_univariada": decision,
             }
         )
@@ -244,6 +315,13 @@ def ejecutar(diagnostico: pd.DataFrame, cfg: ConfigPipeline) -> pd.DataFrame:
     LOGGER.info("Eliminadas por baja variacion : %d", n_var)
     LOGGER.info("Eliminadas por ambos criterios: %d", n_ambos)
     LOGGER.info("Retenidas por excepcion dicotomica (flag 0/1): %d", n_dico)
+    n_dom_alta = int(uni["flg_dominancia_alta"].sum())
+    n_card_alta = int(uni["flg_alta_cardinalidad"].sum())
+    LOGGER.info(
+        "Avisos categoricos (no eliminan): dominancia %.0f-%.0f%% = %d | cardinalidad > %d = %d",
+        cfg.umbral_dominancia_aviso * 100, cfg.umbral_dominancia * 100, n_dom_alta,
+        cfg.umbral_alta_cardinalidad, n_card_alta,
+    )
     LOGGER.info("Sobrevivientes de la fase 1   : %d (%.1f%% de las candidatas)",
                 n_sel, 100 * n_sel / n_cand if n_cand else 0)
 

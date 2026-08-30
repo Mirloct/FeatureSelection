@@ -365,7 +365,7 @@ permite comprobar que cada regla hace lo que promete. Resultado de la corrida:
 | Variable sembrada | Debe detectarla | Resultado |
 |---|---|---|
 | `var_constante` | Fase 1.2 · varianza cero | ✅ eliminada |
-| `var_casi_constante` | Fase 1.2 · dominancia 99.6% | ✅ eliminada |
+| `var_casi_constante` (dominancia 99.4%) | Excepción dicotómica (Fase 1) + Fase 2 · sin poder predictivo | ✅ `RETENIDA_DICOTOMICA` en fase 1 (es un flag 0/1, la dominancia no basta para eliminarla), eliminada en fase 2 por IV/Gini bajos — la razón correcta |
 | `var_cv_bajo` | Fase 1.2 · CV despreciable | ✅ eliminada |
 | `var_muchos_ceros` (97%) | Fase 1.1 · exceso de ceros | ✅ eliminada |
 | `var_muchos_nulos` (96%) | Fase 1.1 · exceso de nulos | ✅ eliminada |

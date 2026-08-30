@@ -235,6 +235,15 @@ def _construir_resumen(
                 int((cand["decision_univariada"] == "RETENIDA_DICOTOMICA").sum()),
                 "Superaban ceros/dominancia/variacion pero un flag 0/1 desbalanceado "
                 "es senal, no ruido: se conservan igual.")
+        if "flg_dominancia_alta" in cand.columns:
+            add("E. Criterios",
+                f"Aviso: categoricas con dominancia {cfg.umbral_dominancia_aviso:.0%}-{cfg.umbral_dominancia:.0%}",
+                int(cand["flg_dominancia_alta"].sum()),
+                "NO se eliminan. Riesgo de sesgo hacia la clase dominante al codificar (one-hot/WOE).")
+        if "flg_alta_cardinalidad" in cand.columns:
+            add("E. Criterios", f"Aviso: categoricas con cardinalidad > {cfg.umbral_alta_cardinalidad}",
+                int(cand["flg_alta_cardinalidad"].sum()),
+                "NO se eliminan. One-hot no recomendable; ver aviso_categorico por variable.")
     if not biv.empty:
         add("E. Criterios", "Eliminadas por IV y Gini por debajo del umbral",
             int(((biv["flg_iv_bajo"] == 1) & (biv["flg_gini_bajo"] == 1)).sum()),
@@ -585,6 +594,16 @@ def _construir_resumen_no_supervisado(
                 int((cand["decision_univariada"] == "RETENIDA_DICOTOMICA").sum()),
                 "Superaban ceros/dominancia/variacion pero un flag 0/1 desbalanceado "
                 "es senal, no ruido: se conservan igual.")
+        if "flg_dominancia_alta" in cand.columns:
+            add("E. Criterios",
+                f"Aviso: categoricas con dominancia {cfg.umbral_dominancia_aviso:.0%}-{cfg.umbral_dominancia:.0%}",
+                int(cand["flg_dominancia_alta"].sum()),
+                "NO se eliminan. Riesgo de sesgo hacia la clase dominante al codificar.")
+        if "flg_alta_cardinalidad" in cand.columns:
+            add("E. Criterios", f"Aviso: categoricas con cardinalidad > {cfg.umbral_alta_cardinalidad}",
+                int(cand["flg_alta_cardinalidad"].sum()),
+                "NO se eliminan. One-hot no recomendable; la rama sin target ya usa codigo "
+                "ordinal por frecuencia en vez de one-hot para estas variables.")
     if not rel.empty:
         add("E. Criterios", "Sin estructura distinguible del ruido (Laplacian Score)",
             int(rel["flg_sin_estructura"].sum()),

@@ -1809,6 +1809,126 @@ en un punto.
 target, id y tiempo, marcadas con su rol— para que sea la fotografía completa, y
 cada eliminación lleva su motivo en texto (<code>motivo_ceros</code>,
 <code>motivo_variacion</code>).</p>
+
+<h3>8.3 Excepción: variables dicotómicas (flags 0/1)</h3>
+<p>Los criterios 1.1 y 1.2 asumen que "casi toda la muestra en un solo valor"
+es sinónimo de "sin información". Eso es cierto para una variable continua,
+pero es <strong>falso por diseño</strong> para un flag binario que describe un
+evento poco frecuente: una variable <code>tuvo_atraso_grave</code> con 99 %
+de ceros no es ruido, es la tasa de incidencia real del fenómeno que se quiere
+predecir. Aplicarle el umbral de dominancia (99 %) o de ceros+nulos (95 %) la
+eliminaría precisamente <em>por</em> ser informativa.</p>
+
+<div class="formula">
+es_dicotomica(columna)  ⟺  mínimo(columna) = 0  Y  máximo(columna) = 1
+
+si es_dicotomica Y (flg_eliminado_ceros O flg_eliminado_variacion):
+    decision_univariada = RETENIDA_DICOTOMICA   (se conserva)
+</div>
+
+<div class="callout why">
+<strong>Por qué min=0 y max=1 alcanza para detectarla</strong>
+Exigir ambos extremos a la vez implica que la columna tiene <em>los dos</em>
+valores presentes: una constante en 0 (o en 1) no cumple la condición, así
+que no hace falta volver a inspeccionar los datos crudos ni contar valores
+únicos por separado — los estadísticos ya calculados en la fase 0 bastan.
+El motivo que habría disparado la eliminación (ceros, dominancia, percentiles
+comprimidos) se deja igual escrito en <code>motivo_variacion</code>: la
+excepción es auditable, no silenciosa.
+</div>
+
+<p>Verificado sobre el panel sintético: <code>var_casi_constante</code> tiene
+99.44 % de valor "1" y dispara tanto <code>flg_categoria_dominante</code> como
+<code>flg_percentiles_comprimidos</code>; con la excepción activa queda
+<code>RETENIDA_DICOTOMICA</code> en vez de eliminada, y sigue disponible para
+que la fase 2 (IV/Gini o Laplacian Score) decida si aporta poder predictivo
+real — que es la pregunta correcta, distinta de "¿está balanceada?".</p>
+
+<h3>8.4 Avisos de categóricas: dominancia en zona gris y cardinalidad alta</h3>
+<p>Dos situaciones de las variables categóricas no ameritan un umbral duro de
+eliminación, pero sí condicionan cómo hay que codificarlas más adelante
+(one-hot, WOE, target encoding): se reportan como <strong>aviso</strong>, sin
+tocar <code>flg_seleccionada_univariada</code>.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Aviso</th><th>Condición</th><th>Riesgo que señala</th></tr></thead>
+<tbody>
+<tr><td><code>flg_dominancia_alta</code></td><td>90 % ≤ p<sub>modal</sub> &lt; 99 %</td>
+<td>Una categoría concentra la mayoría de la masa (pero no lo suficiente para
+"casi constante"): al codificar, la(s) clase(s) minoritaria(s) queda(n) con
+pocas observaciones y el modelo puede sesgarse hacia la dominante o
+sobreajustar la minoritaria.</td></tr>
+<tr><td><code>flg_alta_cardinalidad</code></td><td>n_únicos &gt; 20</td>
+<td>Demasiados niveles para un one-hot práctico: la dimensión explota y la
+mayoría de las columnas resultantes quedan casi vacías (dilución).</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout why">
+<strong>Por qué son avisos y no un tercer criterio de eliminación</strong>
+Ni la dominancia moderada ni la cardinalidad alta implican, por sí solas,
+ausencia de señal — el ejemplo canónico es exactamente el opuesto:
+<code>cat_alta_cardinalidad</code> en el panel sintético tiene 180 niveles al
+~0.5 % cada uno y aun así puede ser predictiva. Convertirlas en eliminación
+automática repetiría el error que la sección 1.5.3 documenta sobre el target
+encoding ingenuo: perder información real por miedo a la forma de la
+distribución. El umbral de aviso (90 %) es deliberadamente <em>menor</em> que
+el de eliminación (99 %, criterio 1.2d) y el de cardinalidad (20) es menor que
+<code>max_categorias</code> (50, el tope de agrupación en <code>__OTROS__</code>
+de la fase 2): así el aviso aparece <strong>antes</strong> de que cualquier
+mecanismo automático actúe, para que la decisión de fondo — ¿esta variable es
+útil con esta granularidad, o conviene agruparla, transformarla o excluirla a
+mano? — se tome con información, no en silencio.
+</div>
+
+<p>Qué hace <strong>ya</strong> este pipeline con ambas situaciones, en vez de
+one-hot puro (ver comparación completa de técnicas de codificación en
+§1.5.3 y §1.5.2):</p>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Rama</th><th>Dónde</th><th>Técnica</th></tr></thead>
+<tbody>
+<tr><td>Supervisada (con target)</td><td>Fase 2 · binning WOE</td>
+<td>Las categorías con menos de <code>min_prop_bin</code> de la muestra, y el
+exceso sobre <code>max_categorias</code>, se agrupan en un bin
+<code>__OTROS__</code> antes de calcular WOE/IV — evita bins con 3
+observaciones y un IV inflado por artefacto de conteo (ver §10 en
+<code>CONTEXTO.md</code>).</td></tr>
+<tr><td>No supervisada (sin target) y Boruta</td><td>
+<code>metricas.construir_matriz_numerica</code></td>
+<td>Codificación <strong>ordinal por frecuencia</strong> (no one-hot): cada
+categoría se mapea a su rango de frecuencia descendente. No multiplica
+columnas (evita el costo cuadrático en sombras de Boruta y no infla los
+grados de libertad del grafo de vecinos del Laplacian Score), a costa de
+imponer un orden arbitrario entre categorías sin relación de orden natural —
+limitación documentada, no oculta.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Técnicas que existen para estos escenarios y por qué este proyecto no las
+usa hoy (evaluadas y descartadas, no ignoradas): <strong>target encoding
+directo</strong> (media del target por categoría) sufre fuga de información
+en categorías raras si no se regulariza con suavizado o validación cruzada —
+por eso la rama supervisada usa WOE con corrección de Haldane-Anscombe en su
+lugar, que es matemáticamente un target encoding regularizado (ver §11.2);
+<strong>feature hashing</strong> resuelve la explosión dimensional pero
+introduce colisiones entre categorías distintas, indeseable en un pipeline
+donde la trazabilidad de cada variable hacia su nombre original es un
+requisito de diseño; <strong>embeddings de entidades</strong> (§1.5.3) exigen
+entrenar una red neuronal dentro de la etapa de selección, exactamente lo que
+se evaluó y descartó para los <em>Concrete Autoencoders</em> (§19.6) por la
+misma razón: este es un filtro estadístico, no un método envolvente (<em>wrapper</em>);
+<strong>Multiple Correspondence Analysis (MCA)</strong> —el análogo de PCA
+para categóricas, útil para explorar asociaciones entre variables categóricas
+sin target— no reemplaza al Laplacian Score de la fase 2 no supervisada
+porque éste ya opera sobre la matriz mixta completa (numéricas + categóricas
+codificadas) en un solo paso; MCA exigiría una rama de cálculo separada solo
+para el subconjunto categórico, duplicando lógica para un beneficio marginal
+dado que la fase 3 (V de Cramér, §13) ya cubre la redundancia
+categórica-categórica.</p>
 </section>
 
 <!-- ================================================================= -->

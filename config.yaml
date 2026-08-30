@@ -47,6 +47,10 @@ univariado:
   umbral_iqr_minimo: 0.0            # IQR <= 0 -> percentiles comprimidos
   minimo_valores_unicos: 2
 
+  # Avisos de CATEGORICAS (no eliminan, solo documentan; ver docs/documentacion.html):
+  umbral_dominancia_aviso: 0.90     # categorica con clase mayoritaria en [90%, 99%) -> aviso
+  umbral_alta_cardinalidad: 20      # categorica con mas de 20 niveles -> aviso (one-hot no recomendable)
+
 # -----------------------------------------------------------------------------
 # C. FASE 2 - BIVARIADO (Information Value y Gini)
 # -----------------------------------------------------------------------------

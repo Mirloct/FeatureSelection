@@ -93,6 +93,25 @@ class ConfigPipeline:
     #: Proporcion maxima admisible del valor/categoria mas frecuente.
     #: >= 0.99 -> una sola categoria domina y la variable es casi constante.
     umbral_dominancia: float = 0.99
+    #: Zona gris de dominancia, SOLO para CATEGORICAS: aviso (no elimina)
+    #: cuando la categoria mas frecuente cubre entre este umbral y
+    #: `umbral_dominancia`. Una categoria que concentra ~90% de la masa no es
+    #: "casi constante" (eso exige 99%), pero codificarla (one-hot, WOE) deja
+    #: a la clase minoritaria con muy pocas observaciones: el modelo puede
+    #: sesgarse hacia la clase dominante o sobreajustar la minoritaria. Debe
+    #: ser < `umbral_dominancia`.
+    umbral_dominancia_aviso: float = 0.90
+    #: Cantidad de categorias distintas por encima de la cual una CATEGORICA
+    #: se marca como de "cardinalidad alta" (aviso, no elimina): el one-hot
+    #: deja de ser practico (explosion dimensional, columnas casi vacias) y
+    #: conviene agrupar categorias raras o usar una codificacion que no
+    #: multiplique columnas (la fase 2 ya agrupa en __OTROS__ via
+    #: `max_categorias`; la rama no supervisada ya usa codigo ordinal por
+    #: frecuencia en vez de one-hot). Este umbral es mas bajo que
+    #: `max_categorias` a proposito: avisa antes de que el agrupamiento entre
+    #: a actuar, para que la decision de fondo (¿esta variable es realmente
+    #: util con esta granularidad?) se tome con informacion, no en silencio.
+    umbral_alta_cardinalidad: int = 20
     #: IQR (p75-p25) por debajo del cual se marca "percentiles comprimidos".
     umbral_iqr_minimo: float = 0.0
     #: Numero minimo de valores unicos para considerar evaluable una variable.
@@ -336,7 +355,8 @@ class ConfigPipeline:
 
         # --- Rangos de proporciones ---------------------------------------
         for nombre in ("umbral_ceros_nulos", "umbral_ceros_nulos_alterno",
-                       "umbral_dominancia", "umbral_correlacion", "min_prop_bin"):
+                       "umbral_dominancia", "umbral_dominancia_aviso",
+                       "umbral_correlacion", "min_prop_bin"):
             valor = getattr(self, nombre)
             if not 0.0 < float(valor) <= 1.0:
                 errores.append(f"'{nombre}'={valor} debe estar en el intervalo (0, 1].")
@@ -346,6 +366,14 @@ class ConfigPipeline:
                 "El umbral alterno debe ser MAS conservador (menor) que el principal: "
                 f"{self.umbral_ceros_nulos_alterno} > {self.umbral_ceros_nulos}."
             )
+        if self.umbral_dominancia_aviso >= self.umbral_dominancia:
+            errores.append(
+                "El umbral de aviso de dominancia debe ser MENOR que el umbral de eliminacion: "
+                f"umbral_dominancia_aviso={self.umbral_dominancia_aviso} >= "
+                f"umbral_dominancia={self.umbral_dominancia}."
+            )
+        if self.umbral_alta_cardinalidad < 2:
+            errores.append(f"umbral_alta_cardinalidad={self.umbral_alta_cardinalidad} debe ser >= 2.")
 
         # --- Pesos del score compuesto ------------------------------------
         suma = self.peso_gini + self.peso_iv
@@ -418,7 +446,8 @@ class ConfigPipeline:
 def _bloque_por_prefijo(nombre: str) -> str:
     """Asigna un bloque legible a cada parametro para la hoja de bitacora."""
     if nombre.startswith(("umbral_ceros", "umbral_std", "umbral_cv", "umbral_dominancia",
-                          "umbral_iqr", "minimo_valores", "usar_umbral")):
+                          "umbral_iqr", "umbral_alta_cardinalidad", "minimo_valores",
+                          "usar_umbral")):
         return "B. Univariado"
     # OJO: se evalua ANTES que "C. Bivariado" porque "peso_laplaciano",
     # "peso_dispersion", "alpha_ruido_laplaciano" y "top_n_no_supervisado"

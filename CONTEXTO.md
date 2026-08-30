@@ -84,13 +84,19 @@ Parámetros de la corrida de referencia:
 
 ```
 CON TARGET (data/panel_sintetico.csv, 6.923 filas × 31 columnas)
-28 candidatas → 23 (fase 1) → 11 (fase 2) → 7 (fase 3) → Boruta: 7 confirmadas, 16 rechazadas
-~25 s con Boruta, ~4 s sin él
+28 candidatas → 24 (fase 1, incluye 1 RETENIDA_DICOTOMICA) → 11 (fase 2) → 7 (fase 3) → Boruta: 6 confirmadas, 1 tentativa, 17 rechazadas
+~30 s con Boruta, ~4 s sin él
 
 SIN TARGET (data/panel_sin_target.csv, mismo panel sin la columna target)
-28 candidatas → 23 (fase 1) → 18 (fase 2: Laplacian Score) → 14 (fase 3)
+28 candidatas → 24 (fase 1, incluye 1 RETENIDA_DICOTOMICA) → 18 (fase 2: Laplacian Score) → 14 (fase 3)
 ~8 s, sin fase 4
 ```
+
+La diferencia de 23→24 en fase 1 frente a corridas previas es la excepción
+dicotómica (§4): `var_casi_constante` (99.44% de un solo valor) ya no se
+elimina por dominancia. En ambos flujos termina descartada más adelante por
+falta de poder predictivo (fase 2), así que el resultado final no cambia —
+solo cambia DÓNDE y POR QUÉ se descarta, que ahora es la razón correcta.
 
 ### Pruebas de regresión que deben seguir pasando
 
@@ -143,6 +149,31 @@ tipos mixtos normalizando tres medidas a [0,1]: `|Spearman|` (num-num),
 V de Cramér con corrección de Bergsma (cat-cat), razón de correlación η
 (num-cat). Spearman por defecto: robusto a outliers y a relaciones no
 lineales-pero-monótonas, comunes en variables económicas.
+
+**Excepción dicotómica en la fase 1 (flags 0/1).** Un flag binario con
+incidencia baja (ej. 99% ceros) dispara los criterios de ceros+nulos y de
+categoría dominante, pero ahí el desbalance ES la señal, no ruido: eliminarlo
+sería descartarlo precisamente por ser informativo. Una columna con
+`mínimo=0` y `máximo=1` (ambos valores presentes) se retiene siempre
+(`decision_univariada = RETENIDA_DICOTOMICA`), con el motivo que la habría
+eliminado igual escrito para que la excepción sea auditable. No aplica a
+categóricas de dos niveles no numéricas (ej. "SI"/"NO" como texto): solo a
+columnas ya codificadas en {0, 1}.
+
+**Avisos de categóricas: dominancia en zona gris y cardinalidad alta.** Dos
+situaciones que no ameritan eliminación automática pero sí condicionan la
+codificación (one-hot, WOE, target encoding) rio abajo, y por eso se
+reportan como aviso (no tocan `flg_seleccionada_univariada`):
+`flg_dominancia_alta` (una categoría cubre entre `umbral_dominancia_aviso`
+=90% y `umbral_dominancia`=99%: riesgo de sesgo hacia la clase dominante al
+codificar) y `flg_alta_cardinalidad` (más de `umbral_alta_cardinalidad`=20
+niveles distintos: el one-hot deja de ser práctico). El pipeline ya evita el
+problema de fondo sin necesidad de eliminar nada: la rama supervisada agrupa
+categorías raras/excedentes en `__OTROS__` antes del binning WOE
+(`max_categorias`), y la rama sin target (además de Boruta) usa codificación
+ordinal por frecuencia en vez de one-hot en `construir_matriz_numerica`. Ver
+`docs/documentacion.html` §8.3-8.4 para la comparación completa contra target
+encoding, hashing, embeddings y MCA, y por qué no se adoptaron en su lugar.
 
 **Laplacian Score: el grafo debe ser *leave-one-out*.** La primera versión
 construía un único grafo con todas las variables juntas y evaluaba cada una

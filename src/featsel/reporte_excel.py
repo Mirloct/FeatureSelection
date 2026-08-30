@@ -61,7 +61,10 @@ FLAGS_POSITIVOS = {
     "flg_supera_ruido", "flg_seleccionada_no_supervisada",
 }
 #: Columnas cuyo valor 1 pinta de ambar (avisos que no eliminan).
-FLAGS_AVISO = {"flg_sospecha_fuga", "flg_inestable_temporal", "flg_tentativa"}
+FLAGS_AVISO = {
+    "flg_sospecha_fuga", "flg_inestable_temporal", "flg_tentativa",
+    "flg_dominancia_alta", "flg_alta_cardinalidad",
+}
 
 #: Columnas que se formatean como porcentaje.
 FORMATO_PORCENTAJE = {
@@ -269,6 +272,9 @@ def construir_diccionario() -> pd.DataFrame:
         ("02_Univariado", "flg_categoria_dominante", "Subcriterio: una categoria concentra mas de umbral_dominancia."),
         ("02_Univariado", "flg_percentiles_comprimidos", "Subcriterio: IQR nulo y p25=p99 (la distribucion colapsa)."),
         ("02_Univariado", "flg_dicotomica", "1 = flag 0/1 (ambos valores presentes). Exenta de eliminacion por ceros/variacion: un evento raro no es ruido."),
+        ("02_Univariado", "flg_dominancia_alta", "Aviso (NO elimina), solo categoricas: la categoria mas frecuente cubre entre umbral_dominancia_aviso (90%) y umbral_dominancia (99%). Riesgo de sesgo al codificar."),
+        ("02_Univariado", "flg_alta_cardinalidad", "Aviso (NO elimina), solo categoricas: mas de umbral_alta_cardinalidad (20) niveles distintos. El one-hot deja de ser practico; ver aviso_categorico."),
+        ("02_Univariado", "aviso_categorico", "Texto con el detalle de los avisos de dominancia/cardinalidad, si aplican."),
         ("02_Univariado", "flg_seleccionada_univariada", "1 = la variable pasa a la fase bivariada."),
         ("02_Univariado", "decision_univariada", "RETENIDA_DICOTOMICA = se conservo pese a disparar un criterio, por ser flag 0/1."),
         ("02_Univariado", "motivo_ceros / motivo_variacion", "Texto con la razon exacta del criterio disparado (trazabilidad), aun si se retuvo por excepcion."),
