@@ -49,6 +49,7 @@ import pandas as pd
 from . import (
     fase0_diagnostico,
     fase1_univariado,
+    fase1b_agrupacion_categorica,
     fase2_bivariado,
     fase2_no_supervisado,
     fase3_multivariado,
@@ -147,7 +148,7 @@ def _construir_embudo(
 def _construir_resumen(
     cfg: ConfigPipeline, df: pd.DataFrame, uni: pd.DataFrame, biv: pd.DataFrame,
     multi: pd.DataFrame, boruta_meta: dict, rep_val: validaciones.ReporteValidacion,
-    diagnostico: pd.DataFrame, segundos: float,
+    diagnostico: pd.DataFrame, segundos: float, reporte_agrupacion: pd.DataFrame,
 ) -> pd.DataFrame:
     """Resumen ejecutivo en formato seccion / concepto / valor / comentario."""
     n_total = df.shape[1]
@@ -244,6 +245,15 @@ def _construir_resumen(
             add("E. Criterios", f"Aviso: categoricas con cardinalidad > {cfg.umbral_alta_cardinalidad}",
                 int(cand["flg_alta_cardinalidad"].sum()),
                 "NO se eliminan. One-hot no recomendable; ver aviso_categorico por variable.")
+    if not reporte_agrupacion.empty:
+        n_cols_agrup = reporte_agrupacion["columna"].nunique()
+        n_orig = reporte_agrupacion.groupby("columna")["n_categorias_originales"].first().sum()
+        n_grupos = reporte_agrupacion.groupby("columna")["etiqueta_grupo"].nunique().sum()
+        add("E. Criterios",
+            f"Fase 1B: categoricas agrupadas por similitud de nombre (cardinalidad > {cfg.umbral_cardinalidad_clustering})",
+            n_cols_agrup,
+            f"{int(n_orig)} niveles originales -> {int(n_grupos)} grupos en total "
+            "(TF-IDF 3-gramas + K-Means, k por silueta). Ver hoja 02b.")
     if not biv.empty:
         add("E. Criterios", "Eliminadas por IV y Gini por debajo del umbral",
             int(((biv["flg_iv_bajo"] == 1) & (biv["flg_gini_bajo"] == 1)).sum()),
@@ -532,7 +542,7 @@ def _conclusiones_no_supervisada(
 def _construir_resumen_no_supervisado(
     cfg: ConfigPipeline, df: pd.DataFrame, uni: pd.DataFrame, rel: pd.DataFrame,
     multi: pd.DataFrame, rep_val: validaciones.ReporteValidacion,
-    diagnostico: pd.DataFrame, segundos: float,
+    diagnostico: pd.DataFrame, segundos: float, reporte_agrupacion: pd.DataFrame,
 ) -> pd.DataFrame:
     """Resumen ejecutivo del flujo NO SUPERVISADO (sin target)."""
     n_total = df.shape[1]
@@ -604,6 +614,15 @@ def _construir_resumen_no_supervisado(
                 int(cand["flg_alta_cardinalidad"].sum()),
                 "NO se eliminan. One-hot no recomendable; la rama sin target ya usa codigo "
                 "ordinal por frecuencia en vez de one-hot para estas variables.")
+    if not reporte_agrupacion.empty:
+        n_cols_agrup = reporte_agrupacion["columna"].nunique()
+        n_orig = reporte_agrupacion.groupby("columna")["n_categorias_originales"].first().sum()
+        n_grupos = reporte_agrupacion.groupby("columna")["etiqueta_grupo"].nunique().sum()
+        add("E. Criterios",
+            f"Fase 1B: categoricas agrupadas por similitud de nombre (cardinalidad > {cfg.umbral_cardinalidad_clustering})",
+            n_cols_agrup,
+            f"{int(n_orig)} niveles originales -> {int(n_grupos)} grupos en total "
+            "(TF-IDF 3-gramas + K-Means, k por silueta). Idem rama supervisada. Ver hoja 02b.")
     if not rel.empty:
         add("E. Criterios", "Sin estructura distinguible del ruido (Laplacian Score)",
             int(rel["flg_sin_estructura"].sum()),
@@ -848,6 +867,8 @@ def ejecutar(
             )
 
     pasos_barra = ["Fase 0 - Diagnostico inicial", "Fase 1 - Univariado"]
+    if cfg.usar_agrupacion_categorica_nombre:
+        pasos_barra.append("Fase 1B - Agrupacion de categoricas por nombre")
     if rep_val.modo_supervisado:
         pasos_barra += [
             "Fase 2 - Bivariado (IV/Gini)", "Fase 3 - Multivariado",
@@ -870,6 +891,16 @@ def ejecutar(
     uni = fase1_univariado.ejecutar(diag["diagnostico"], cfg)
     sobrevivientes_1 = fase1_univariado.obtener_sobrevivientes(uni)
     barra.avanzar()
+
+    # === FASE 1B (identica en ambos flujos: no usa el target) ==============
+    # Reasigna `df`: de aqui en adelante TODO lo que siga (fase 2 en
+    # cualquiera de sus dos variantes, fase 3, Boruta y el dataset final)
+    # trabaja sobre las columnas ya agrupadas, sin distincion de rama.
+    df, reporte_agrupacion = fase1b_agrupacion_categorica.ejecutar(
+        df, cfg, tipos, sobrevivientes_1, uni
+    )
+    if cfg.usar_agrupacion_categorica_nombre:
+        barra.avanzar()
 
     deps_df = (
         pd.DataFrame(reporte_bootstrap.a_filas()) if reporte_bootstrap is not None else pd.DataFrame()
@@ -899,7 +930,7 @@ def ejecutar(
 
         segundos = time.perf_counter() - t0
         resumen = _construir_resumen(cfg, df, uni, biv, multi, boruta_meta, rep_val,
-                                     diag["diagnostico"], segundos)
+                                     diag["diagnostico"], segundos, reporte_agrupacion)
         embudo = _construir_embudo(df.shape[1], uni, biv, multi, cfg, boruta_meta)
         tabla_final = _construir_seleccion_final(multi, biv, uni, boruta, tipos)
         descartadas = _construir_descartadas(uni, biv, multi)
@@ -940,7 +971,7 @@ def ejecutar(
 
         segundos = time.perf_counter() - t0
         resumen = _construir_resumen_no_supervisado(cfg, df, uni, rel, multi, rep_val,
-                                                    diag["diagnostico"], segundos)
+                                                    diag["diagnostico"], segundos, reporte_agrupacion)
         embudo = _construir_embudo_no_supervisado(df.shape[1], uni, rel, multi, cfg)
         tabla_final = _construir_seleccion_final_no_supervisada(multi, tipos)
         descartadas = _construir_descartadas_no_supervisada(uni, rel, multi)
@@ -960,6 +991,8 @@ def ejecutar(
             "parametros": pd.DataFrame(cfg.a_filas()), "dependencias": deps_df,
             "variables_seleccionadas": seleccion_final, "segundos": segundos,
         }
+
+    resultados["agrupacion_categorica"] = reporte_agrupacion
 
     # === Exportacion (capa separada, comun a ambos flujos) =================
     # El log se vuelca justo antes de exportar para que la hoja de bitacora

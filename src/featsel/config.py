@@ -118,6 +118,29 @@ class ConfigPipeline:
     minimo_valores_unicos: int = 2
 
     # =====================================================================
+    # BLOQUE B2. Fase 1B - Agrupacion de categoricas por similitud de nombre
+    # =====================================================================
+    # Comun a ambas ramas (corre antes del fork, no usa el target). Ataca el
+    # caso que ni la fase 1 (dominancia) ni el agrupamiento por frecuencia de
+    # la fase 2 (`max_categorias`) resuelven bien: una categorica genuinamente
+    # dispersa (ninguna categoria domina) pero con demasiados niveles para un
+    # one-hot util. Ver `fase1b_agrupacion_categorica.py` y
+    # `metricas.agrupar_categoria_por_similitud_nombre`.
+    #: Interruptor maestro de la fase.
+    usar_agrupacion_categorica_nombre: bool = True
+    #: Cardinalidad minima para activar el CLUSTERING (accion, no solo aviso).
+    #: Deliberadamente mayor que `umbral_alta_cardinalidad` (20, que solo
+    #: avisa en la fase 1): ese umbral bajo existe para que se vea el aviso
+    #: aunque no se actue; este es el umbral en el que SI se actua.
+    umbral_cardinalidad_clustering: int = 100
+    #: Tope superior del barrido de k explorado por silueta. Se acota ademas
+    #: a `n_unicos - 1` por columna (no tiene sentido proponer mas grupos que
+    #: categorias menos uno). 30 es un techo generoso frente al piso de
+    #: activacion (100 categorias): incluso en el peor caso reduce la
+    #: cardinalidad a menos de un tercio.
+    max_k_agrupacion_categorica: int = 30
+
+    # =====================================================================
     # BLOQUE C. Fase 2 - Bivariado (IV / Gini)
     # =====================================================================
     #: Numero de bins objetivo para la discretizacion por cuantiles (WOE).
@@ -374,6 +397,14 @@ class ConfigPipeline:
             )
         if self.umbral_alta_cardinalidad < 2:
             errores.append(f"umbral_alta_cardinalidad={self.umbral_alta_cardinalidad} debe ser >= 2.")
+        if self.umbral_cardinalidad_clustering < self.umbral_alta_cardinalidad:
+            errores.append(
+                "umbral_cardinalidad_clustering debe ser >= umbral_alta_cardinalidad (el aviso "
+                f"debe dispararse antes que la accion): {self.umbral_cardinalidad_clustering} < "
+                f"{self.umbral_alta_cardinalidad}."
+            )
+        if self.max_k_agrupacion_categorica < 2:
+            errores.append(f"max_k_agrupacion_categorica={self.max_k_agrupacion_categorica} debe ser >= 2.")
 
         # --- Pesos del score compuesto ------------------------------------
         suma = self.peso_gini + self.peso_iv
@@ -449,6 +480,9 @@ def _bloque_por_prefijo(nombre: str) -> str:
                           "umbral_iqr", "umbral_alta_cardinalidad", "minimo_valores",
                           "usar_umbral")):
         return "B. Univariado"
+    if nombre in ("usar_agrupacion_categorica_nombre", "umbral_cardinalidad_clustering",
+                  "max_k_agrupacion_categorica"):
+        return "B2. Agrupacion categorica por nombre"
     # OJO: se evalua ANTES que "C. Bivariado" porque "peso_laplaciano",
     # "peso_dispersion", "alpha_ruido_laplaciano" y "top_n_no_supervisado"
     # comparten prefijo con parametros de esa fase (peso_, alpha_ruido, top_n)

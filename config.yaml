@@ -52,6 +52,18 @@ univariado:
   umbral_alta_cardinalidad: 20      # categorica con mas de 20 niveles -> aviso (one-hot no recomendable)
 
 # -----------------------------------------------------------------------------
+# B2. FASE 1B - AGRUPACION DE CATEGORICAS DE CARDINALIDAD MUY ALTA POR NOMBRE
+# -----------------------------------------------------------------------------
+# Comun a ambas ramas (no usa el target). Agrupa por similitud LEXICA del
+# nombre (TF-IDF de 3-gramas + K-Means, k elegido por silueta) las categoricas
+# con demasiados niveles y SIN una categoria dominante (si domina, el problema
+# es otro: ver umbral_dominancia_aviso arriba). Ver docs/documentacion.html.
+agrupacion_categorica:
+  usar_agrupacion_categorica_nombre: true
+  umbral_cardinalidad_clustering: 100   # activa el clustering (no solo el aviso) por encima de esto
+  max_k_agrupacion_categorica: 30       # tope del barrido de k explorado por silueta
+
+# -----------------------------------------------------------------------------
 # C. FASE 2 - BIVARIADO (Information Value y Gini)
 # -----------------------------------------------------------------------------
 bivariado:

@@ -63,7 +63,7 @@ FLAGS_POSITIVOS = {
 #: Columnas cuyo valor 1 pinta de ambar (avisos que no eliminan).
 FLAGS_AVISO = {
     "flg_sospecha_fuga", "flg_inestable_temporal", "flg_tentativa",
-    "flg_dominancia_alta", "flg_alta_cardinalidad",
+    "flg_dominancia_alta", "flg_alta_cardinalidad", "flg_es_otros",
 }
 
 #: Columnas que se formatean como porcentaje.
@@ -278,6 +278,18 @@ def construir_diccionario() -> pd.DataFrame:
         ("02_Univariado", "flg_seleccionada_univariada", "1 = la variable pasa a la fase bivariada."),
         ("02_Univariado", "decision_univariada", "RETENIDA_DICOTOMICA = se conservo pese a disparar un criterio, por ser flag 0/1."),
         ("02_Univariado", "motivo_ceros / motivo_variacion", "Texto con la razon exacta del criterio disparado (trazabilidad), aun si se retuvo por excepcion."),
+        # --- Agrupacion de categoricas (fase 1B) -----------------------------
+        ("02b_Agrupacion_Categoricas", "columna", "Variable categorica de cardinalidad muy alta que califico para el clustering de nombres."),
+        ("02b_Agrupacion_Categoricas", "categoria_original", "Valor de texto original, antes de agrupar."),
+        ("02b_Agrupacion_Categoricas", "n_observaciones", "Filas del dataset con ese valor original (peso de la categoria)."),
+        ("02b_Agrupacion_Categoricas", "cluster_id", "Grupo asignado por K-Means (0 a k_optimo-1)."),
+        ("02b_Agrupacion_Categoricas", "etiqueta_grupo", "Valor final que reemplaza a categoria_original de aqui en adelante: el miembro mas frecuente del cluster, o __OTROS__ si es el cluster mas disperso."),
+        ("02b_Agrupacion_Categoricas", "flg_es_otros", "1 = este cluster es el de mayor dispersion interna, se etiqueta __OTROS__."),
+        ("02b_Agrupacion_Categoricas", "distancia_a_centroide", "Distancia coseno de esta categoria (TF-IDF de 3-gramas de su nombre) al centroide de su cluster. Mayor = menos tipica del grupo."),
+        ("02b_Agrupacion_Categoricas", "dispersion_cluster", "Distancia coseno media al centroide, promediada sobre todo el cluster. El cluster con el valor mas alto es el que se vuelve __OTROS__."),
+        ("02b_Agrupacion_Categoricas", "k_optimo", "Numero de grupos elegido para esta variable, maximizando la silueta media (Rousseeuw, 1987) sobre k en [2, max_k_agrupacion_categorica]."),
+        ("02b_Agrupacion_Categoricas", "silueta_optima", "Silueta media del k elegido. Mas cercano a 1 = clusters mejor separados; cercano a 0 = solapados; negativo = mal agrupados."),
+        ("02b_Agrupacion_Categoricas", "n_categorias_originales", "Cardinalidad de la variable ANTES de agrupar (n_unicos)."),
         # --- Bivariado ------------------------------------------------------
         ("03_Bivariado", "iv", "Information Value: informacion acumulada bin a bin frente al target."),
         ("03_Bivariado", "clasificacion_iv", "Escala de Siddiqi: SIN_PODER <0.02, DEBIL <0.10, MEDIO <0.30, FUERTE <0.50, SOSPECHOSO_FUGA >=0.50."),
@@ -377,6 +389,13 @@ def exportar(resultados: dict[str, Any], ruta_salida: str | Path) -> Path:
         "02_Univariado", resultados.get("univariado"),
         "FASE 1 - PRUEBAS UNIVARIADAS (CEROS+NULOS Y BAJA VARIACION)",
     ))
+
+    reporte_agrupacion = resultados.get("agrupacion_categorica")
+    if reporte_agrupacion is not None and not reporte_agrupacion.empty:
+        hojas.append((
+            "02b_Agrupacion_Categoricas", reporte_agrupacion,
+            "FASE 1B - AGRUPACION DE CATEGORICAS DE CARDINALIDAD MUY ALTA POR SIMILITUD DE NOMBRE",
+        ))
 
     if modo_supervisado:
         hojas.append((

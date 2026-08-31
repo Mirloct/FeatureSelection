@@ -11,11 +11,16 @@ Pipeline de selección de variables para **datos de panel** (entidad × tiempo),
 con dos flujos según exista o no una columna target en el dataset:
 
 - **Con target** (supervisado): Fase 0 diagnóstico → Fase 1 univariado →
-  Fase 2 bivariado (IV/Gini) → Fase 3 multivariado (correlación/VIF) →
-  Fase 4 Boruta (opcional).
-- **Sin target** (no supervisado, fallback automático): Fase 0 y 1 idénticas
-  → Fase 2 alternativa (Laplacian Score + dispersión robusta) → Fase 3
-  idéntica → sin Fase 4. Orientado a alimentar Isolation Forest o un VAE.
+  Fase 1B agrupación de categóricas por nombre → Fase 2 bivariado (IV/Gini) →
+  Fase 3 multivariado (correlación/VIF) → Fase 4 Boruta (opcional).
+- **Sin target** (no supervisado, fallback automático): Fase 0, 1 y 1B
+  idénticas → Fase 2 alternativa (Laplacian Score + dispersión robusta) →
+  Fase 3 idéntica → sin Fase 4. Orientado a alimentar Isolation Forest o un VAE.
+
+La Fase 1B (`fase1b_agrupacion_categorica.py`) corre UNA SOLA VEZ, antes del
+fork: no usa el target (agrupa por cómo se ESCRIBE el nombre de la categoría,
+no por cómo se comporta frente al target), así que sirve a las dos ramas por
+igual sin duplicar cómputo.
 
 Cuál flujo corre se decide en un único punto —
 `validaciones.target_disponible()`, justo tras cargar el dataset — sin que el
@@ -175,6 +180,25 @@ ordinal por frecuencia en vez de one-hot en `construir_matriz_numerica`. Ver
 `docs/documentacion.html` §8.3-8.4 para la comparación completa contra target
 encoding, hashing, embeddings y MCA, y por qué no se adoptaron en su lugar.
 
+**Agrupación de categóricas de cardinalidad muy alta por similitud de nombre
+(fase 1B).** Ni la dominancia (§ arriba) ni el agrupamiento por frecuencia de
+la fase 2 (`max_categorias` → `__OTROS__`) resuelven bien el caso de una
+categórica genuinamente dispersa (ninguna categoría domina) pero con +100
+niveles: un one-hot o un binning directo diluye la señal en columnas casi
+vacías. Se agrupan los NOMBRES (no el comportamiento frente al target) con
+TF-IDF de 3-gramas de caracteres (Cerda, Varoquaux y Kegl, 2018,
+arXiv:1806.00979) + K-Means, eligiendo k por silueta media (Rousseeuw, 1987)
+en el rango `[2, max_k_agrupacion_categorica]`. El cluster con MAYOR
+dispersión interna (distancia coseno media al centroide) se etiqueta
+`__OTROS__` (misma constante que usa `binear_categorica`); los demás se
+etiquetan con su miembro más frecuente en los datos reales. Corre una sola
+vez, común a ambas ramas, justo después de la fase 1 y antes del fork.
+Verificado: `cat_alta_cardinalidad` (180 niveles sintéticos) → 19 grupos
+(k por silueta=0.195, reducción 89%); el IV posterior (0.018) confirma que
+la reducción no inventa señal, solo evita 180 bins casi vacíos.
+Parámetros: `usar_agrupacion_categorica_nombre`, `umbral_cardinalidad_clustering`
+(100), `max_k_agrupacion_categorica` (30). Ver `docs/documentacion.html` §10b.
+
 **Laplacian Score: el grafo debe ser *leave-one-out*.** La primera versión
 construía un único grafo con todas las variables juntas y evaluaba cada una
 (real y permutada) contra ese mismo grafo. Con 10 columnas de ruido puro sin
@@ -242,6 +266,7 @@ Puntos de entrada:
 - Configuración y umbrales → [config.yaml](config.yaml)
 - Orquestador (decide el flujo) → [src/featsel/pipeline.py](src/featsel/pipeline.py)
 - Estadística supervisada (WOE, IV, Gini, VIF, PSI) → [src/featsel/metricas.py](src/featsel/metricas.py)
+- Fase 1B, agrupación de categóricas por nombre (ambas ramas) → [src/featsel/fase1b_agrupacion_categorica.py](src/featsel/fase1b_agrupacion_categorica.py)
 - Fase 2 no supervisada (Laplacian Score) → [src/featsel/fase2_no_supervisado.py](src/featsel/fase2_no_supervisado.py)
 - Explicación completa con fuentes citadas → [docs/documentacion.html](docs/documentacion.html)
 - Resumen orientado a uso → [README.md](README.md)

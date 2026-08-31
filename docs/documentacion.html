@@ -180,6 +180,7 @@
     <li><a href="#validacion">8 · Validación de integridad</a></li>
     <li><a href="#fase0">9 · Fase 0 · Diagnóstico</a></li>
     <li><a href="#fase1">10 · Fase 1 · Univariado</a></li>
+    <li><a href="#fase1b">10b · Fase 1B · Agrupación de categóricas por nombre</a></li>
     <li><a href="#estadistica">11 · Estadística: WOE, IV, Gini</a>
       <ol class="sub" style="list-style:none;padding:0">
         <li><a href="#binning">11.1 Discretización</a></li>
@@ -1531,6 +1532,8 @@ decidir por el analista.
     <div class="d">Perfil de cada columna. No elimina nada: fotografía del punto de partida.</div></div>
   <div class="stage"><div class="n">Fase 1</div><div class="t">Univariado</div>
     <div class="d">Ceros+nulos y baja variación. No mira el target.</div></div>
+  <div class="stage"><div class="n">Fase 1B</div><div class="t">Agrupación categórica</div>
+    <div class="d">Categóricas de cardinalidad muy alta: agrupa nombres similares (TF-IDF + K-Means).</div></div>
   <div class="stage"><div class="n">Fase 2</div><div class="t">Bivariado</div>
     <div class="d">IV, Gini y score compuesto frente al target.</div></div>
   <div class="stage"><div class="n">Fase 3</div><div class="t">Multivariado</div>
@@ -1549,8 +1552,9 @@ decidir por el analista.
 <tr><td><code>logging_utils.py</code></td><td>Log a consola, archivo y memoria (para la hoja de bitácora).</td></tr>
 <tr><td><code>io_utils.py</code></td><td>Carga y tipificación. Ninguna decisión de selección.</td></tr>
 <tr><td><code>validaciones.py</code></td><td>Integridad del panel: llave, balance, target.</td></tr>
-<tr><td><code>metricas.py</code></td><td>Estadística pura: WOE, IV, Gini, Cramér, η, VIF, PSI, piso de ruido.</td></tr>
+<tr><td><code>metricas.py</code></td><td>Estadística pura: WOE, IV, Gini, Cramér, η, VIF, PSI, piso de ruido, clustering de nombres por TF-IDF + K-Means.</td></tr>
 <tr><td><code>fase0…fase4</code></td><td>Una fase por archivo. Devuelven DataFrames, no escriben archivos.</td></tr>
+<tr><td><code>fase1b_agrupacion_categorica.py</code></td><td>Común a ambas ramas: agrupa categóricas de cardinalidad muy alta por similitud de nombre.</td></tr>
 <tr><td><code>reporte_excel.py</code></td><td>Solo formatea. Cero lógica de decisión.</td></tr>
 <tr><td><code>pipeline.py</code></td><td>Orquesta y consolida. No calcula métricas.</td></tr>
 </tbody>
@@ -1929,6 +1933,130 @@ codificadas) en un solo paso; MCA exigiría una rama de cálculo separada solo
 para el subconjunto categórico, duplicando lógica para un beneficio marginal
 dado que la fase 3 (V de Cramér, §13) ya cubre la redundancia
 categórica-categórica.</p>
+</section>
+
+<!-- ================================================================= -->
+<section id="fase1b">
+<h2>10b · Fase 1B · Agrupación de categóricas de cardinalidad muy alta por similitud de nombre</h2>
+
+<p>Común a las dos ramas (corre <strong>antes</strong> del fork supervisado/no
+supervisado, justo después de la fase 1: no usa el target) y solo actúa sobre
+el hueco que ni §8.4 ni la fase 2 cubren bien:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Situación</th><th>Quién la trata</th><th>Por qué no basta para el caso de aquí</th></tr></thead>
+<tbody>
+<tr><td>Una categoría domina (≥90%)</td><td><code>flg_dominancia_alta</code> / <code>flg_categoria_dominante</code> (§8.2, §8.4)</td>
+<td>El problema es desbalance, no dispersión: agrupar nombres no ayuda si ya hay un ganador claro.</td></tr>
+<tr><td>Cardinalidad moderada-alta (&gt;20 niveles)</td><td>Aviso <code>flg_alta_cardinalidad</code> (§8.4)</td>
+<td>Solo avisa; no reduce nada por sí solo.</td></tr>
+<tr><td>Exceso sobre <code>max_categorias</code> (fase 2)</td><td><code>binear_categorica</code> (§11.1)</td>
+<td>Agrupa por FRECUENCIA: conserva las N más frecuentes y manda TODO el resto a <code>__OTROS__</code> sin mirar si esas categorías descartadas se parecen entre sí.</td></tr>
+<tr><td><strong>Genuinamente dispersa (nadie domina) Y con demasiados niveles (&gt;100)</strong></td>
+<td><strong>Esta fase</strong></td>
+<td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>10b.1 Por qué agrupar por el NOMBRE y no por el comportamiento</h3>
+<p>A diferencia del binning WOE (que agrupa categorías por su relación con el
+target) o de un enfoque tipo <em>target encoding</em>, esta fase agrupa por
+<strong>similitud léxica del nombre</strong>: dos sucursales, productos o
+comercios cuyo nombre comparte una raíz o un patrón de escritura suelen
+representar la misma realidad de negocio (una cadena, una familia de
+producto, una región) incluso antes de mirar el target. Esto es exactamente
+el problema de las <em>"dirty categorical variables"</em> de alta
+cardinalidad: Cerda, Varoquaux y Kegl
+(<em>"Similarity encoding for learning with dirty categorical variables"</em>,
+<em>Machine Learning</em>, 2018;
+<a href="https://arxiv.org/abs/1806.00979">arXiv:1806.00979</a>) muestran que
+la similitud de <strong>3-gramas de caracteres</strong> es una buena elección
+por defecto para capturar parecido morfológico entre nombres, sin
+diccionario ni supuestos de idioma. Como no depende del target, corre una
+sola vez y sirve a las dos ramas por igual — al contrario del binning WOE
+(§11.1), que sí es exclusivo de la rama supervisada.</p>
+
+<div class="formula">
+para cada categorica con n_unicos > umbral_cardinalidad_clustering (100)
+                      Y  pct_valor_mas_frecuente < umbral_dominancia_aviso (90%):
+
+  1. X = TF-IDF( 3-gramas de caracteres de cada nombre unico )
+  2. k* = argmax_k  silueta_media( K-Means(X, k) )   para k en [2, max_k]
+  3. clusters = K-Means(X, k*)
+  4. cluster_otros = argmax_c  distancia_coseno_media_al_centroide(c)
+  5. etiqueta(c) = "__OTROS__"                    si c = cluster_otros
+                 = miembro_mas_frecuente_en_datos(c)   en otro caso
+</div>
+
+<h3>10b.2 Por qué la silueta para elegir k, y por qué distancia coseno</h3>
+<p>La silueta (Rousseeuw, 1987, <em>Journal of Computational and Applied
+Mathematics</em>) compara, para cada punto, qué tan cerca está de su propio
+cluster frente a qué tan cerca está del cluster ajeno más próximo, en
+[-1, 1]: valores altos indican clusters compactos y bien separados. Es el
+método estándar para elegir k sin supervisión — aquí no existe una etiqueta
+"correcta" de a qué grupo pertenece cada nombre contra la que validar — y se
+prefiere sobre el método del codo por dar un único número optimizable
+(<code>argmax</code>) en vez de un punto de inflexión a criterio visual del
+analista, que dos personas leerían distinto. La métrica es <strong>coseno</strong>,
+no euclidiana: es la nativa para comparar vectores TF-IDF (mide similitud de
+dirección, invariante a que un nombre sea más largo que otro), la misma
+razón por la que la matriz de asociación de la fase 3 (§13) usa distintas
+métricas según el tipo de dato en vez de forzar una sola.</p>
+
+<div class="callout why">
+<strong>Por qué K-Means y no un grafo k-NN + comunidades</strong>
+El propio Laplacian Score de la rama no supervisada (§19.2) construye un
+grafo k-NN para medir estructura de vecindad — se podría, en principio,
+reusar esa misma idea aquí (grafo de similitud entre nombres + detección de
+comunidades tipo Louvain) en vez de K-Means. Se descartó por dos razones:
+K-Means sobre TF-IDF es el estándar establecido para agrupar texto corto
+(documentado también en el propio ejemplo de referencia de scikit-learn,
+<em>"Clustering text documents using k-means"</em>), y da un k EXPLÍCITO y
+optimizable por silueta -- la detección de comunidades no tiene un análogo
+igual de simple y auditable para "cuántos grupos hay". Mantener una sola
+familia de técnica (vectorizar + K-Means + silueta) en vez de dos (grafos
+k-NN para Laplacian Score, comunidades para nombres) también evita duplicar
+lógica de construcción de grafos para un beneficio marginal, el mismo
+argumento que descarta MCA en §8.4.
+</div>
+
+<h3>10b.3 Por qué el cluster más disperso se etiqueta <code>__OTROS__</code></h3>
+<p>Después de agrupar, cada cluster tiene una dispersión interna (distancia
+coseno media de sus miembros a su propio centroide). Un cluster MUY disperso
+es, por construcción, uno donde el algoritmo no encontró un patrón fuerte
+que compartir: es el "cajón de sastre" de nombres residuales — exactamente
+lo que <code>__OTROS__</code> significa en el resto del pipeline (misma
+constante <code>CAT_OTROS</code> que usa <code>binear_categorica</code>,
+§11.1, así que si esta fase ya redujo lo suficiente, el agrupamiento por
+frecuencia de la fase 2 ni siquiera vuelve a intervenir). Los demás
+clusters se etiquetan con su miembro MÁS FRECUENTE en los datos reales (no
+un índice arbitrario como "grupo 7"): así la etiqueta final sigue siendo un
+nombre reconocible del negocio, solo que ahora representa también a sus
+vecinos léxicos.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Parámetro</th><th>Default</th><th>Efecto</th></tr></thead>
+<tbody>
+<tr><td><code>usar_agrupacion_categorica_nombre</code></td><td class="num">true</td><td>Interruptor maestro de toda la fase.</td></tr>
+<tr><td><code>umbral_cardinalidad_clustering</code></td><td class="num">100</td><td>Cardinalidad mínima para ACTUAR (no solo avisar como <code>umbral_alta_cardinalidad</code>=20).</td></tr>
+<tr><td><code>max_k_agrupacion_categorica</code></td><td class="num">30</td><td>Tope del barrido de k explorado por silueta; también se acota a n_únicos-1.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>Verificado</strong> sobre <code>cat_alta_cardinalidad</code> del
+panel sintético (180 nombres de sucursal, ninguno con más de 0.9% de la
+masa): se eligió k=19 (silueta=0.195 — moderada, esperable porque los
+nombres sintéticos son códigos "SUC_NNN" casi sin patrón semántico real más
+allá del prefijo compartido), reduciendo 180 niveles a 19 grupos (-89%). El
+IV de la variable, calculado por la fase 2 sobre esos 19 grupos en vez de
+sobre los 180 nombres originales, sigue sin superar el umbral (0.018 &lt;
+0.02): la reducción de dimensionalidad no "inventa" señal donde no la hay,
+solo evita que la fase 2 tenga que lidiar con 180 bins casi vacíos para
+llegar a esa misma conclusión correcta.</p>
 </section>
 
 <!-- ================================================================= -->
@@ -2529,6 +2657,7 @@ es información para el analista, no una decisión automática.
 <tr><td><code>01_Diagnostico_Inicial</code></td><td>Perfil completo de cada columna</td></tr>
 <tr><td><code>01b–01d</code></td><td>Cabecera del dataset · validaciones del panel · target por periodo</td></tr>
 <tr><td><code>02_Univariado</code></td><td><strong>Todas</strong> las columnas originales con flags y motivos</td></tr>
+<tr><td><code>02b_Agrupacion_Categoricas</code></td><td>Solo si algo se agrupó: categoría original → grupo, cluster, k y silueta (§10b)</td></tr>
 <tr><td><code>03_Bivariado</code></td><td>IV, Gini, score, pisos de ruido, PSI, advertencias</td></tr>
 <tr><td><code>04_Multivariado</code></td><td>Asociación máxima, VIF, redundancias, selección final</td></tr>
 <tr><td><code>05_Boruta</code></td><td>Solo si <code>usar_boruta = true</code></td></tr>

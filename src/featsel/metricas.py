@@ -1079,3 +1079,157 @@ def laplacian_score_con_piso_ruido(
         })
 
     return pd.DataFrame(filas)
+
+
+# ===========================================================================
+# 10. AGRUPACION DE CATEGORICAS DE CARDINALIDAD MUY ALTA POR SIMILITUD DE
+#     NOMBRE (comun a ambas ramas: no usa el target)
+# ===========================================================================
+#: n-grama de caracteres usado para vectorizar los nombres de categoria.
+#: Cerda, Varoquaux y Kegl ("Similarity encoding for learning with dirty
+#: categorical variables", Machine Learning, 2018; arXiv:1806.00979)
+#: encuentran que la similitud de 3-gramas de caracteres es una buena
+#: eleccion por defecto para capturar parecido morfologico entre categorias
+#: de texto de alta cardinalidad (nombres de sucursal, de producto, de
+#: entidad...), sin necesitar diccionario ni idioma.
+_NGRAMA_AGRUPACION = (3, 3)
+
+
+def _vectorizar_nombres(valores: list[str]):
+    """TF-IDF de 3-gramas de caracteres sobre los NOMBRES de categoria.
+
+    ``analyzer="char_wb"`` acota los n-gramas a no cruzar limites de palabra
+    (agrega relleno de espacio en los bordes), lo que en la practica pesa mas
+    los prefijos/sufijos compartidos ("SUC_" en "SUC_045"/"SUC_046") frente a
+    coincidencias internas casuales -- exactamente el tipo de patron
+    estructural que se quiere agrupar.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+
+    vectorizador = TfidfVectorizer(analyzer="char_wb", ngram_range=_NGRAMA_AGRUPACION, min_df=1)
+    return vectorizador.fit_transform(valores)
+
+
+def _elegir_k_optimo(X, k_max: int, semilla: int) -> tuple[int, float, dict]:
+    """Barrido de k en [2, k_max]; se queda con el de mayor silueta media.
+
+    La silueta (Rousseeuw, 1987) compara, para cada punto, su distancia
+    promedio dentro del propio cluster contra la distancia promedio al
+    cluster mas cercano ajeno: es la practica estandar para elegir k sin
+    supervision (ninguna etiqueta "correcta" existe para nombres de
+    categoria), preferida aqui sobre el metodo del codo por dar un unico
+    numero optimizable en vez de un punto de inflexion a criterio visual.
+    Se usa distancia coseno (no euclidiana): es la metrica nativa de
+    similitud entre vectores TF-IDF, invariante a la longitud del nombre.
+    """
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+
+    n = X.shape[0]
+    k_tope = min(k_max, n - 1)
+    mejor_k, mejor_score, mejor_modelo = 2, -1.0, None
+    puntajes: dict[int, float] = {}
+
+    for k in range(2, max(2, k_tope) + 1):
+        modelo = KMeans(n_clusters=k, random_state=semilla, n_init=10).fit(X)
+        etiquetas = modelo.labels_
+        if len(set(etiquetas)) < 2:
+            continue
+        score = float(silhouette_score(X, etiquetas, metric="cosine"))
+        puntajes[k] = score
+        if score > mejor_score:
+            mejor_k, mejor_score, mejor_modelo = k, score, modelo
+
+    return mejor_k, mejor_score, {"puntajes_por_k": puntajes, "modelo": mejor_modelo}
+
+
+def agrupar_categoria_por_similitud_nombre(
+    serie: pd.Series, k_max: int = 30, semilla: int = 42,
+) -> tuple[pd.Series, pd.DataFrame, str]:
+    """Reduce la cardinalidad de una categorica agrupando nombres similares.
+
+    Pensado para categoricas con demasiados niveles para un one-hot (o incluso
+    para el agrupamiento por frecuencia de ``binear_categorica``) pero donde
+    NINGUNA categoria domina la muestra (si dominara, el problema es otro: ver
+    ``flg_dominancia_alta`` en fase 1). Vectoriza los NOMBRES (no el
+    comportamiento frente a un target: esto no lo necesita, por eso corre
+    igual en la rama supervisada y en la no supervisada) con TF-IDF de
+    3-gramas de caracteres, agrupa con K-Means y elige k por silueta.
+
+    El cluster con MAYOR dispersion interna (distancia coseno media de sus
+    miembros al propio centroide) se etiqueta ``__OTROS__``: es, por
+    definicion, el grupo menos cohesionado -- el "cajon de sastre" de nombres
+    que no comparten un patron fuerte con nadie mas -- exactamente lo que
+    ``__OTROS__`` significa en el resto del pipeline (ver
+    ``binear_categorica``). Los demas clusters se etiquetan con su miembro
+    MAS FRECUENTE en los datos reales, para que el nombre del grupo sea
+    reconocible en vez de un indice arbitrario.
+
+    Returns
+    -------
+    (serie_agrupada, reporte, metodo)
+        ``serie_agrupada`` tiene el mismo indice que ``serie``; los nulos se
+        dejan intactos (no son un "nombre" que agrupar). ``reporte`` tiene una
+        fila por categoria ORIGINAL con su cluster, etiqueta final y distancia
+        a su centroide, para trazabilidad completa. ``metodo`` es una
+        descripcion corta para el log/bitacora.
+    """
+    no_nulos = serie.dropna().astype(str)
+    frecuencias = no_nulos.value_counts()
+    valores = frecuencias.index.tolist()
+    n_unicos = len(valores)
+
+    if n_unicos < 4:
+        return serie, pd.DataFrame(), f"omitido: solo {n_unicos} categorias, no amerita clustering"
+
+    try:
+        X = _vectorizar_nombres(valores)
+        k_optimo, silueta, meta = _elegir_k_optimo(X, k_max=k_max, semilla=semilla)
+        modelo = meta["modelo"]
+        if modelo is None:
+            return serie, pd.DataFrame(), "omitido: ningun k produjo clusters validos (silueta no calculable)"
+        etiquetas = modelo.labels_
+
+        from sklearn.metrics.pairwise import cosine_distances
+
+        dist_a_centros = cosine_distances(X, modelo.cluster_centers_)
+        dist_asignada = dist_a_centros[np.arange(n_unicos), etiquetas]
+
+        dispersion_por_cluster = pd.Series(dist_asignada).groupby(etiquetas).mean()
+        cluster_otros = int(dispersion_por_cluster.idxmax())
+    except Exception as exc:  # noqa: BLE001 - un fallo de clustering no debe tumbar el pipeline
+        return serie, pd.DataFrame(), f"omitido: error de clustering ({exc})"
+
+    # --- Etiqueta final por cluster: el miembro mas frecuente, salvo OTROS --
+    tabla_valores = pd.DataFrame({
+        "categoria_original": valores, "n_observaciones": frecuencias.to_numpy(),
+        "cluster_id": etiquetas, "distancia_a_centroide": dist_asignada,
+    })
+    representantes = (
+        tabla_valores.sort_values("n_observaciones", ascending=False)
+        .groupby("cluster_id")["categoria_original"].first()
+    )
+    etiqueta_por_cluster = {
+        c: (CAT_OTROS if c == cluster_otros else representantes[c])
+        for c in range(k_optimo)
+    }
+    tabla_valores["etiqueta_grupo"] = tabla_valores["cluster_id"].map(etiqueta_por_cluster)
+    tabla_valores["flg_es_otros"] = (tabla_valores["cluster_id"] == cluster_otros).astype(int)
+    tabla_valores["dispersion_cluster"] = tabla_valores["cluster_id"].map(dispersion_por_cluster)
+    tabla_valores["k_optimo"] = k_optimo
+    tabla_valores["silueta_optima"] = round(silueta, 4)
+    tabla_valores["n_categorias_originales"] = n_unicos
+
+    mapa = dict(zip(tabla_valores["categoria_original"], tabla_valores["etiqueta_grupo"]))
+    serie_agrupada = serie.astype(object).where(serie.isna(), no_nulos.map(mapa))
+
+    metodo = (
+        f"TF-IDF 3-gramas + K-Means (k={k_optimo} elegido por silueta={silueta:.3f} "
+        f"sobre {n_unicos} categorias -> {k_optimo} grupos, incl. {CAT_OTROS})"
+    )
+    columnas_orden = [
+        "categoria_original", "n_observaciones", "cluster_id", "etiqueta_grupo",
+        "flg_es_otros", "distancia_a_centroide", "dispersion_cluster",
+        "k_optimo", "silueta_optima", "n_categorias_originales",
+    ]
+    return serie_agrupada, tabla_valores[columnas_orden], metodo

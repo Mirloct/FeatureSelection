@@ -371,7 +371,7 @@ permite comprobar que cada regla hace lo que promete. Resultado de la corrida:
 | `var_muchos_nulos` (96%) | Fase 1.1 · exceso de nulos | ✅ eliminada |
 | `var_ruido_1..5` | Fase 2 · piso de ruido | ✅ las 5 eliminadas |
 | `var_fija_entidad` | Fase 2 + ICC≈1 | ✅ eliminada y marcada como invariante |
-| `cat_alta_cardinalidad` (180 niveles) | Fase 2 · agrupación en `__OTROS__` | ✅ 9 bins, eliminada por IV |
+| `cat_alta_cardinalidad` (180 niveles) | Fase 1B · clustering por nombre (TF-IDF+K-Means) + Fase 2 · `__OTROS__` | ✅ Fase 1B: 180→19 grupos (k por silueta=0.195); Fase 2: 18 bins sobre esos 19 grupos, eliminada por IV (0.018 < 0.02) |
 | `var_texto_numerico` | Tipificación + fase 3 | ✅ convertida y detectada (ρ = 1.000) |
 | `var_clon_score` | Fase 3 · redundancia (ρ = 0.9998) | ✅ par resuelto por score |
 | `var_no_monotona` | Fase 2 · IV capta lo que el Gini pierde | ✅ retenida (IV 0.445 / Gini crudo 0.005) |
