@@ -2005,23 +2005,6 @@ dirección, invariante a que un nombre sea más largo que otro), la misma
 razón por la que la matriz de asociación de la fase 3 (§13) usa distintas
 métricas según el tipo de dato en vez de forzar una sola.</p>
 
-<div class="callout why">
-<strong>Por qué K-Means y no un grafo k-NN + comunidades</strong>
-El propio Laplacian Score de la rama no supervisada (§19.2) construye un
-grafo k-NN para medir estructura de vecindad — se podría, en principio,
-reusar esa misma idea aquí (grafo de similitud entre nombres + detección de
-comunidades tipo Louvain) en vez de K-Means. Se descartó por dos razones:
-K-Means sobre TF-IDF es el estándar establecido para agrupar texto corto
-(documentado también en el propio ejemplo de referencia de scikit-learn,
-<em>"Clustering text documents using k-means"</em>), y da un k EXPLÍCITO y
-optimizable por silueta -- la detección de comunidades no tiene un análogo
-igual de simple y auditable para "cuántos grupos hay". Mantener una sola
-familia de técnica (vectorizar + K-Means + silueta) en vez de dos (grafos
-k-NN para Laplacian Score, comunidades para nombres) también evita duplicar
-lógica de construcción de grafos para un beneficio marginal, el mismo
-argumento que descarta MCA en §8.4.
-</div>
-
 <h3>10b.3 Por qué el cluster más disperso se etiqueta <code>__OTROS__</code></h3>
 <p>Después de agrupar, cada cluster tiene una dispersión interna (distancia
 coseno media de sus miembros a su propio centroide). Un cluster MUY disperso
