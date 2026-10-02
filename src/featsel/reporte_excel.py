@@ -23,6 +23,15 @@ Hojas generadas
 08_Bitacora_Log             log completo de la corrida
 09_Diccionario              significado de cada columna de cada hoja
 Anexos                      matriz de asociacion, pares redundantes, tablas WOE
+
+Metadata
+--------
+Data sources / inputs: diccionario de resultados de ``featsel.pipeline``.
+Created: 2026-07-26
+Last modified: 2026-10-01
+Changelog:
+- 2026-10-01: se agregaron hojas auditables para FE, estabilidad, ablacion y
+  el esquema time-safe de la matriz Isolation Forest/VAE.
 """
 
 from __future__ import annotations
@@ -248,7 +257,7 @@ def construir_diccionario() -> pd.DataFrame:
     """
     d = [
         # --- Diagnostico ---------------------------------------------------
-        ("01_Diagnostico_Inicial", "rol", "Papel de la columna: TARGET, ID_ENTIDAD, TIEMPO, EXCLUIDA_MANUAL o CANDIDATA."),
+        ("01_Diagnostico_Inicial", "rol", "Papel de la columna: TARGET, ID_ENTIDAD, TIEMPO, CONTEXTO_FE, EXCLUIDA_MANUAL o CANDIDATA."),
         ("01_Diagnostico_Inicial", "tipo_inferido", "Familia detectada: NUMERICA, CATEGORICA, BOOLEANA o FECHA."),
         ("01_Diagnostico_Inicial", "pct_nulos", "Proporcion de valores ausentes sobre el total de filas."),
         ("01_Diagnostico_Inicial", "pct_ceros", "Proporcion de ceros (o cadena vacia en texto)."),
@@ -262,6 +271,16 @@ def construir_diccionario() -> pd.DataFrame:
         ("01_Diagnostico_Inicial", "var_between", "Varianza de las medias ENTRE entidades: diferencias estructurales."),
         ("01_Diagnostico_Inicial", "icc_panel", "var_between/(var_between+var_within). ~1 = variable fija por entidad; ~0 = puramente temporal."),
         ("01_Diagnostico_Inicial", "flg_candidata_exclusion_temprana", "Aviso del diagnostico. NO elimina: la decision formal es de la fase 1."),
+        # --- Feature engineering de anomalias -----------------------------
+        ("01e_FE_Catalogo", "familia", "TEMPORAL o KDE; permite la ablacion por familia."),
+        ("01e_FE_Catalogo", "behavior_var", "Conducta mensual original de la que se deriva la feature."),
+        ("01e_FE_Catalogo", "referencia", "Perfil personal, conjunto o marginal usado como comparacion."),
+        ("01e_FE_Catalogo", "time_safe", "1 = solo se utilizaron observaciones anteriores al mes evaluado."),
+        ("01f_FE_Estabilidad", "pct_nulos", "Cobertura faltante de la feature en cada periodo."),
+        ("01f_FE_Estabilidad", "media / std / p95", "Resumen temporal para detectar deriva o inestabilidad."),
+        ("01g_FE_Ablacion", "tasa_supervivencia", "Fraccion de features de la familia que supero la seleccion completa."),
+        ("01h_Prep_IF_VAE", "transformacion", "Imputacion/codificacion aprendida exclusivamente en TRAIN."),
+        ("01h_Prep_IF_VAE", "centro_train / escala_iqr_train", "Parametros robustos de TRAIN aplicados tambien a HOLDOUT."),
         # --- Univariado -----------------------------------------------------
         ("02_Univariado", "pct_ceros+nulos", "Criterio 1.1. Se elimina si supera el umbral configurado (95% por defecto)."),
         ("02_Univariado", "flg_eliminado_ceros", "1 = dispara el criterio de ceros+nulos (no eliminada si flg_dicotomica=1, ver excepcion)."),
@@ -384,6 +403,19 @@ def exportar(resultados: dict[str, Any], ruta_salida: str | Path) -> Path:
             "01d_Target_por_Periodo", resultados.get("target_por_periodo"),
             "DISTRIBUCION DEL TARGET A LO LARGO DE LA DIMENSION TEMPORAL",
         ))
+
+    catalogo_fe = resultados.get("feature_engineering_catalogo")
+    if catalogo_fe is not None and not catalogo_fe.empty:
+        hojas += [
+            ("01e_FE_Catalogo", catalogo_fe,
+             "FEATURE ENGINEERING - CATALOGO DE VARIABLES TEMPORALES Y KDE"),
+            ("01f_FE_Estabilidad", resultados.get("feature_engineering_estabilidad"),
+             "FEATURE ENGINEERING - COBERTURA Y ESTABILIDAD POR PERIODO"),
+            ("01g_FE_Ablacion", resultados.get("feature_engineering_ablacion"),
+             "FEATURE ENGINEERING - SUPERVIVENCIA POR FAMILIA TRAS LA SELECCION"),
+            ("01h_Prep_IF_VAE", resultados.get("preparacion_modelos"),
+             "PREPARACION TIME-SAFE DE VARIABLES PARA ISOLATION FOREST Y VAE"),
+        ]
 
     hojas.append((
         "02_Univariado", resultados.get("univariado"),

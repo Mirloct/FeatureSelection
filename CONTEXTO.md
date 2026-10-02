@@ -10,25 +10,42 @@ para entender el diseño sin releer todo el código ni el historial de chat.
 Pipeline de selección de variables para **datos de panel** (entidad × tiempo),
 con dos flujos según exista o no una columna target en el dataset:
 
-- **Con target** (supervisado): Fase 0 diagnóstico → Fase 1 univariado →
-  Fase 1B agrupación de categóricas por nombre → Fase 2 bivariado (IV/Gini) →
-  Fase 3 multivariado (correlación/VIF) → Fase 4 Boruta (opcional).
-- **Sin target** (no supervisado, fallback automático): Fase 0, 1 y 1B
-  idénticas → Fase 2 alternativa (Laplacian Score + dispersión robusta) →
-  Fase 3 idéntica → sin Fase 4. Orientado a alimentar Isolation Forest o un VAE.
+- **Con target** (supervisado): [FE opcional] → Fase 0 diagnóstico → Fase 1
+  univariado → Fase 1B agrupación de categóricas por nombre → Fase 2
+  bivariado (IV/Gini) → Fase 3 multivariado (correlación/VIF) → Fase 4 Boruta
+  (opcional).
+- **Sin target** (no supervisado, fallback automático): [FE opcional] →
+  Fase 0, 1 y 1B idénticas → Fase 2 alternativa (Laplacian Score + dispersión
+  robusta) → Fase 3 idéntica → sin Fase 4. Orientado a alimentar Isolation
+  Forest o un VAE.
 
 La Fase 1B (`fase1b_agrupacion_categorica.py`) corre UNA SOLA VEZ, antes del
 fork: no usa el target (agrupa por cómo se ESCRIBE el nombre de la categoría,
 no por cómo se comporta frente al target), así que sirve a las dos ramas por
 igual sin duplicar cómputo.
 
+**Feature engineering opcional (`feature_engineering_anomalias.py`), apagado
+por defecto** (`usar_feature_engineering: false`): si se activa, corre ANTES
+de la fase 0 —también común a ambas ramas, también sin usar el target— y
+genera por cada `behavior_var` configurada (a) estadísticos temporales
+personales desplazados (lag, diferencia, media/std/z por ventana) y (b)
+rareza por KDE condicional contra perfiles históricos comparables
+(`context_vars`), con una regla de causalidad estricta: una fila del mes *t*
+solo ve datos de meses anteriores a *t*. Las columnas generadas (prefijo
+`fe__`) entran como candidatas ordinarias a las fases normales de depuración
+— no reciben trato preferencial, pueden ser descartadas igual que cualquier
+otra variable. Ver §4 para las decisiones de diseño y
+`docs/documentacion.html` §7b para la justificación teórica completa.
+
 Cuál flujo corre se decide en un único punto —
 `validaciones.target_disponible()`, justo tras cargar el dataset — sin que el
 usuario tenga que configurar nada.
 
-Todo el proceso queda documentado en un Excel de bitácora (19 hojas con
-target, 16 sin target) más un CSV "listo para modelar" con solo las variables
-seleccionadas.
+Todo el proceso queda documentado en un Excel de bitácora (20 hojas con
+target, 17 sin target; +4 si el feature engineering opcional está activo)
+más un CSV "listo para modelar" con solo las variables seleccionadas, y —si
+`preparar_modelos_anomalia: true` y el FE está activo— una matriz numérica
+adicional lista para Isolation Forest/VAE con separación TRAIN/HOLDOUT.
 
 Requisitos de diseño que se mantienen en todo el código:
 
@@ -77,6 +94,9 @@ Parámetros de la corrida de referencia:
 | Validaciones de integridad del panel (target opcional, id+tiempo obligatorios) | ✅ |
 | Fase 0 · Diagnóstico | ✅ |
 | Fase 1 · Univariado | ✅ |
+| Fase 1B · Agrupación de categóricas de cardinalidad muy alta por nombre | ✅ |
+| Feature engineering opcional: temporales causales + KDE condicional (apagado por defecto) | ✅ |
+| Preparación time-safe de matriz para Isolation Forest / VAE (opcional) | ✅ |
 | Fase 2 · Bivariado IV/Gini (con target) | ✅ |
 | Fase 2 · Laplacian Score (sin target) | ✅ |
 | Fase 3 · Multivariado (asociación/VIF), común a ambos flujos | ✅ |
@@ -93,9 +113,29 @@ CON TARGET (data/panel_sintetico.csv, 6.923 filas × 31 columnas)
 ~30 s con Boruta, ~4 s sin él
 
 SIN TARGET (data/panel_sin_target.csv, mismo panel sin la columna target)
-28 candidatas → 24 (fase 1, incluye 1 RETENIDA_DICOTOMICA) → 18 (fase 2: Laplacian Score) → 14 (fase 3)
-~8 s, sin fase 4
+28 candidatas → 24 (fase 1, incluye 1 RETENIDA_DICOTOMICA) → 15 (fase 2: Laplacian Score) → 11 (fase 3)
+~10 s, sin fase 4
 ```
+
+### Última corrida verificada CON feature engineering activo
+
+Config usada (reproducible contra `data/panel_sintetico.csv`, sin tocar
+`config.yaml`): `usar_feature_engineering=true`,
+`context_vars=["cat_region","cat_segmento"]`,
+`behavior_vars=["var_monto_deuda","var_ingreso_estimado"]`, resto por
+defecto (`reference_mode=joint_and_marginal`, `temporal_windows=[3,6,12]`).
+
+```
+34 features generadas (22 TEMPORAL + 12 KDE) -> 14 sobreviven la seleccion
+completa (41.2%) -> matriz IF/VAE: 5.765 TRAIN / 1.158 HOLDOUT, 21 variables
+~32 s. Ambas ramas (con y sin target) probadas sin error.
+```
+
+Verificado también: `preparar_para_modelos` bloquea con mensaje explícito si
+faltan columnas configuradas, si una `behavior_var` no es numérica, o si no
+hay más periodos que `meses_holdout_anomalia`; con el interruptor apagado
+(default) el resultado es byte-idéntico al de antes de que este módulo
+existiera (mismos conteos de arriba, 28→24→11→7 y 28→24→18→14).
 
 La diferencia de 23→24 en fase 1 frente a corridas previas es la excepción
 dicotómica (§4): `var_casi_constante` (99.44% de un solo valor) ya no se
@@ -110,6 +150,12 @@ solo cambia DÓNDE y POR QUÉ se descarta, que ahora es la razón correcta.
 - Llave `id+tiempo` duplicada → bloquea con mensaje explícito.
 - Dataset sin columna target → activa el flujo no supervisado, no falla.
 - Configuración inválida (ej. `umbral_correlacion=1.5`) → bloquea en validación.
+- `usar_feature_engineering=false` (default) → resultado byte-idéntico al
+  pipeline sin ese módulo (ver conteos del embudo arriba); con `true` y
+  `context_vars`/`behavior_vars` apuntando a columnas inexistentes o no
+  numéricas → bloquea con mensaje explícito, no sustituye nada en silencio.
+- `py -m pytest tests/` → 3 pruebas en verde (interruptor apagado, no
+  look-ahead, contrato de la matriz IF/VAE).
 
 ---
 
@@ -117,6 +163,56 @@ solo cambia DÓNDE y POR QUÉ se descarta, que ahora es la razón correcta.
 
 Cada una responde a un fallo real detectado durante el desarrollo. Si algo
 aquí "se ve raro", es a propósito — revisar antes de "corregirlo".
+
+**Feature engineering de anomalías: causalidad estricta, sin excepciones.**
+Toda la lógica de `feature_engineering_anomalias.py` existe para que una fila
+del mes *t* NUNCA vea información de *t* o de meses futuros — el pecado
+capital de la detección de anomalías temporales. Tres mecanismos lo
+garantizan: (1) los estadísticos personales se calculan sobre `shift(1)` antes
+de aplicar cualquier ventana; (2) la referencia KDE de un mes se construye
+solo con `periodos[:pos_periodo]` (estrictamente anterior, nunca incluye el
+propio mes); (3) la selección de bandwidth `time_safe_cv` valida contra el
+último periodo *disponible dentro de la referencia histórica*, nunca contra
+el periodo que se está evaluando. Verificado con una prueba dedicada
+(`tests/test_feature_engineering_anomalias.py::test_primer_mes_y_futuro_no_contaminan_features`):
+alterar el valor del último mes no cambia ni un número de los meses
+anteriores. Si se toca este módulo, esa prueba debe seguir en verde.
+
+**Por qué KDE condicional y no un score de anomalía global.** Comparar una
+observación contra TODA la población mezcla segmentos heterogéneos (un
+ingreso "raro" para un jubilado puede ser normal para un ejecutivo). El KDE
+se ajusta por separado para cada perfil de `context_vars` (`reference_mode`:
+`joint`, `marginal` o ambos), así que la rareza se mide contra pares
+comparables. Un perfil con menos de `min_group_size` observaciones históricas
+deja la feature en `NaN` en vez de mezclarse silenciosamente con la población
+global — preferible un dato faltante (que la fase 1 puede evaluar por
+cobertura) a una comparación sin sentido estadístico.
+
+**Por qué el bandwidth se elige con `time_safe_cv` y no siempre con la regla
+de Silverman.** Silverman (1986, *Density Estimation for Statistics and Data
+Analysis*) es un óptimo asintótico bajo normalidad; con las colas pesadas
+típicas de variables de comportamiento financiero puede sobre-suavizar. Por
+defecto se prueba una grilla de bandwidths y se valida contra el último
+periodo histórico disponible (nunca el evaluado): es validación cruzada
+temporal de un solo split, no k-fold clásico, porque mezclar periodos
+futuros y pasados en los folds violaría la misma causalidad que el resto del
+módulo protege. Silverman queda como *fallback* explícito
+(`bandwidth_method: "silverman"`) y como respaldo automático cuando no hay
+suficiente historia para la validación cruzada.
+
+**Las features generadas no reciben trato preferencial.** Entran a la fase 0
+como candidatas normales (prefijo `fe__`, rol `CANDIDATA`) y las reglas de
+ceros/variación/IV/redundancia existentes pueden descartarlas igual que a
+cualquier otra variable. No hay una ruta especial de "siempre incluir las
+features de anomalía"; si no aportan, se van — la hoja `01g_FE_Ablacion`
+documenta esa tasa de supervivencia por familia.
+
+**La matriz para Isolation Forest/VAE se prepara DESPUÉS de seleccionar, y
+solo aprende de TRAIN.** Prepararla antes arrastraría variables sin aporte
+real; aprender imputación/codificación/escala sobre el dataset completo
+filtraría información del HOLDOUT hacia el preprocesamiento. El corte
+TRAIN/HOLDOUT es temporal (`meses_holdout_anomalia` últimos periodos), no
+aleatorio, por la misma razón de causalidad del resto del módulo.
 
 **Piso de ruido estadístico (IV).** Un umbral fijo de IV (0.02) ignora que el
 IV espurio de una variable aleatoria crece con el número de bins y decrece
@@ -242,13 +338,25 @@ Detalle completo con números en `docs/documentacion.html` §19.3.
 - **Binning supervisado/monotónico** como alternativa a los cuantiles.
 - **Clustering de variables** (ej. VarClusHi) en vez de eliminación greedy
   por pares en la fase 3.
-- **Tests unitarios con pytest** sobre `metricas.py`.
+- **Tests unitarios con pytest sobre `metricas.py`**: existe `tests/` desde
+  2026-10-01 pero solo cubre `feature_engineering_anomalias.py` (causalidad y
+  contrato de la matriz IF/VAE). WOE/IV/Gini/VIF/Laplacian Score/clustering de
+  nombres siguen sin tests automatizados, solo verificación manual documentada
+  en este archivo.
 - **Selección con efectos fijos**: transformar *within* antes de medir poder
   predictivo.
 - **Concrete Autoencoders** (Abid, Balın y Zou, ICML 2019) como selección
   acoplada nativamente al VAE final, si se quiere ir más allá del filtro
   estadístico actual — evaluado y descartado por ahora por requerir entrenar
   una red dentro de la etapa de selección (ver `docs/documentacion.html` §19.6).
+- **Entrenar el Isolation Forest / VAE en sí**: el feature engineering opcional
+  prepara la matriz (`preparar_para_modelos`) pero NO entrena ningún modelo de
+  anomalías; eso es responsabilidad de un proyecto/paso posterior que consuma
+  `<bitacora>_matriz_anomalias.csv`.
+- **Validación out-of-time para el KDE más allá de la selección de bandwidth**:
+  hoy `time_safe_cv` valida un solo split (último periodo histórico vs. resto);
+  una validación k-fold temporal completa (varios cortes) daría una estimación
+  menos ruidosa del bandwidth óptimo a costa de más cómputo.
 
 ---
 
@@ -259,6 +367,7 @@ cd c:\Users\Marco\Documents\Proyectos\FeatureSelection
 py run_pipeline.py                                              # flujo con target
 py run_pipeline.py --ruta-dataset data/panel_sin_target.csv `
                    --ruta-salida-excel outputs/bitacora_no_supervisada.xlsx   # flujo sin target
+py -m pytest tests/ -v                                          # suite de tests (FE/anomalias)
 ```
 
 Puntos de entrada:
@@ -268,5 +377,9 @@ Puntos de entrada:
 - Estadística supervisada (WOE, IV, Gini, VIF, PSI) → [src/featsel/metricas.py](src/featsel/metricas.py)
 - Fase 1B, agrupación de categóricas por nombre (ambas ramas) → [src/featsel/fase1b_agrupacion_categorica.py](src/featsel/fase1b_agrupacion_categorica.py)
 - Fase 2 no supervisada (Laplacian Score) → [src/featsel/fase2_no_supervisado.py](src/featsel/fase2_no_supervisado.py)
+- Feature engineering opcional (temporales + KDE + matriz IF/VAE), apagado por
+  defecto → [src/featsel/feature_engineering_anomalias.py](src/featsel/feature_engineering_anomalias.py)
+  (tests en [tests/test_feature_engineering_anomalias.py](tests/test_feature_engineering_anomalias.py);
+  guía de activación en [docs/feature_engineering_anomalias.html](docs/feature_engineering_anomalias.html))
 - Explicación completa con fuentes citadas → [docs/documentacion.html](docs/documentacion.html)
 - Resumen orientado a uso → [README.md](README.md)

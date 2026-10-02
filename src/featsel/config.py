@@ -4,6 +4,15 @@ config.py
 
 FUENTE UNICA DE VERDAD de la configuracion del proyecto.
 
+Metadata
+--------
+Data sources / inputs: ``config.yaml`` y overrides de ``run_pipeline.py``.
+Created: 2026-07-26
+Last modified: 2026-10-01
+Changelog:
+- 2026-10-01: se centralizo la configuracion de feature engineering temporal,
+  KDE condicional y preparacion time-safe para Isolation Forest/VAE.
+
 Los nombres de las columnas de rol (`columna_target`, `columna_id`,
 `columna_tiempo`) viven UNICAMENTE aqui / en `config.yaml`. Ningun otro modulo
 del proyecto escribe literales como "target" o "periodo": todos reciben el
@@ -268,6 +277,46 @@ class ConfigPipeline:
     #: Si el dataset no existe, generar el panel sintetico de demostracion.
     generar_demo_si_falta: bool = True
 
+    # =====================================================================
+    # BLOQUE G. Feature engineering para anomalias (opcional, pre-depuracion)
+    # =====================================================================
+    #: Interruptor maestro. Si es False, el pipeline conserva exactamente el
+    #: flujo historico y no exige que existan context_vars/behavior_vars.
+    usar_feature_engineering: bool = False
+    #: Perfil de comparacion para la KDE. Pueden ser numericas o categoricas;
+    #: los valores se tratan como estratos, sin codificacion ordinal.
+    context_vars: list[str] = field(default_factory=list)
+    #: Conductas mensuales analizadas individualmente. Deben ser numericas.
+    behavior_vars: list[str] = field(default_factory=list)
+    #: Por defecto el contexto define pares comparables pero no se entrega al
+    #: detector final (evita marcar perfiles demograficos como anomalias).
+    incluir_context_vars_en_seleccion: bool = False
+    #: Kernels soportados por sklearn.neighbors.KernelDensity.
+    kernel_type: str = "gaussian"
+    #: "joint", "marginal" o "joint_and_marginal".
+    reference_mode: str = "joint_and_marginal"
+    #: Minimo de observaciones historicas dentro del perfil comparable.
+    min_group_size: int = 100
+    #: Observaciones previas de la entidad requeridas para z-scores personales.
+    min_personal_history: int = 6
+    #: "time_safe_cv", "silverman" o un ancho numerico positivo.
+    bandwidth_method: str | float = "time_safe_cv"
+    #: Grilla de bandwidth sobre la escala robusta usada por time_safe_cv.
+    bandwidth_grid: list[float] = field(default_factory=lambda: [0.10, 0.20, 0.35, 0.50, 0.75, 1.00])
+    #: Ventanas (meses/observaciones) para estadisticos personales desplazados.
+    temporal_windows: list[int] = field(default_factory=lambda: [3, 6, 12])
+    #: Estabilizador de divisiones, densidades y escalas robustas.
+    epsilon: float = 1e-8
+    #: Tope determinista de referencias por ajuste KDE (0 = sin tope).
+    kde_max_reference_rows: int = 20_000
+
+    # Preparacion comun para Isolation Forest y VAE. La matriz se genera tras
+    # la seleccion, con imputacion/codificacion/escalado aprendidos SOLO en el
+    # tramo de entrenamiento temporal.
+    preparar_modelos_anomalia: bool = True
+    meses_holdout_anomalia: int = 3
+    ruta_matriz_anomalias: str = ""
+
     # ------------------------------------------------------------------
     # Propiedades derivadas
     # ------------------------------------------------------------------
@@ -279,7 +328,12 @@ class ConfigPipeline:
     @property
     def columnas_no_candidatas(self) -> list[str]:
         """Roles reservados + exclusiones explicitas del usuario."""
-        return self.columnas_rol + list(self.columnas_excluidas)
+        contexto = (
+            list(self.context_vars)
+            if self.usar_feature_engineering and not self.incluir_context_vars_en_seleccion
+            else []
+        )
+        return self.columnas_rol + list(self.columnas_excluidas) + contexto
 
     @property
     def umbral_ceros_nulos_efectivo(self) -> float:
@@ -300,6 +354,14 @@ class ConfigPipeline:
         extension = ".parquet" if self.formato_dataset_final == "parquet" else ".csv"
         return base.with_name(f"{base.stem}_dataset_final{extension}")
 
+    @property
+    def ruta_matriz_anomalias_efectiva(self) -> Path:
+        """Ruta de la matriz numerica time-safe para Isolation Forest/VAE."""
+        if self.ruta_matriz_anomalias.strip():
+            return Path(self.ruta_matriz_anomalias)
+        base = Path(self.ruta_salida_excel)
+        return base.with_name(f"{base.stem}_matriz_anomalias.csv")
+
     def rol_de(self, columna: str) -> str:
         """Clasifica una columna segun su papel en el panel."""
         if columna == self.columna_target:
@@ -310,6 +372,12 @@ class ConfigPipeline:
             return "TIEMPO"
         if columna in self.columnas_excluidas:
             return "EXCLUIDA_MANUAL"
+        if (
+            self.usar_feature_engineering
+            and not self.incluir_context_vars_en_seleccion
+            and columna in self.context_vars
+        ):
+            return "CONTEXTO_FE"
         return "CANDIDATA"
 
     # ------------------------------------------------------------------
@@ -425,6 +493,58 @@ class ConfigPipeline:
         if self.formato_dataset_final not in ("csv", "parquet"):
             errores.append(f"formato_dataset_final='{self.formato_dataset_final}' no valido (csv|parquet).")
 
+        # --- Feature engineering de anomalias -----------------------------
+        kernels_validos = {"gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"}
+        if self.kernel_type not in kernels_validos:
+            errores.append(
+                f"kernel_type='{self.kernel_type}' no valido; use uno de {sorted(kernels_validos)}."
+            )
+        if self.reference_mode not in ("joint", "marginal", "joint_and_marginal"):
+            errores.append(
+                f"reference_mode='{self.reference_mode}' no valido (joint|marginal|joint_and_marginal)."
+            )
+        if self.usar_feature_engineering and not self.behavior_vars:
+            errores.append("behavior_vars no puede estar vacio cuando usar_feature_engineering=True.")
+        if self.usar_feature_engineering and not self.context_vars:
+            errores.append("context_vars no puede estar vacio cuando usar_feature_engineering=True.")
+        if len(self.context_vars) != len(set(self.context_vars)):
+            errores.append("context_vars contiene nombres duplicados.")
+        if len(self.behavior_vars) != len(set(self.behavior_vars)):
+            errores.append("behavior_vars contiene nombres duplicados.")
+        choque_fe = set(self.context_vars) & set(self.behavior_vars)
+        if choque_fe:
+            errores.append(f"context_vars y behavior_vars deben ser disjuntas: {sorted(choque_fe)}.")
+        roles_fe = {self.columna_id, self.columna_tiempo, self.columna_target}
+        choque_roles = roles_fe & (set(self.context_vars) | set(self.behavior_vars))
+        if choque_roles:
+            errores.append(
+                "Las columnas de rol no pueden usarse como contexto o conducta (evita identidad/fuga): "
+                f"{sorted(choque_roles)}."
+            )
+        if self.min_group_size < 2:
+            errores.append(f"min_group_size={self.min_group_size} debe ser >= 2.")
+        if self.min_personal_history < 2:
+            errores.append(f"min_personal_history={self.min_personal_history} debe ser >= 2.")
+        if self.epsilon <= 0:
+            errores.append(f"epsilon={self.epsilon} debe ser > 0.")
+        if self.kde_max_reference_rows < 0:
+            errores.append("kde_max_reference_rows debe ser >= 0 (0 significa sin limite).")
+        if self.meses_holdout_anomalia < 1:
+            errores.append("meses_holdout_anomalia debe ser >= 1.")
+        if not self.temporal_windows or any(int(w) < 2 for w in self.temporal_windows):
+            errores.append("temporal_windows debe contener enteros >= 2.")
+        if not self.bandwidth_grid or any(float(x) <= 0 for x in self.bandwidth_grid):
+            errores.append("bandwidth_grid debe contener valores positivos.")
+        if isinstance(self.bandwidth_method, str):
+            if self.bandwidth_method not in ("time_safe_cv", "silverman"):
+                try:
+                    if float(self.bandwidth_method) <= 0:
+                        raise ValueError
+                except ValueError:
+                    errores.append("bandwidth_method debe ser time_safe_cv, silverman o un numero positivo.")
+        elif float(self.bandwidth_method) <= 0:
+            errores.append("bandwidth_method numerico debe ser > 0.")
+
         # --- Enteros positivos --------------------------------------------
         if self.n_bins < 2:
             errores.append(f"n_bins={self.n_bins} debe ser >= 2.")
@@ -501,6 +621,14 @@ def _bloque_por_prefijo(nombre: str) -> str:
         return "D. Multivariado"
     if nombre.startswith(("motor_boruta", "boruta_")):
         return "E. Boruta"
+    if nombre in {
+        "usar_feature_engineering", "context_vars", "behavior_vars",
+        "incluir_context_vars_en_seleccion", "kernel_type",
+        "reference_mode", "min_group_size", "min_personal_history", "bandwidth_method",
+        "bandwidth_grid", "temporal_windows", "epsilon", "kde_max_reference_rows",
+        "preparar_modelos_anomalia", "meses_holdout_anomalia", "ruta_matriz_anomalias",
+    }:
+        return "G. Feature engineering de anomalias"
     return "F. Ejecucion"
 
 
@@ -546,6 +674,27 @@ def cargar_config(
         if limpios:
             LOGGER.info("Overrides de linea de comandos: %s", limpios)
         datos.update(limpios)
+
+    # Alias ingleses del contrato de FE solicitado. Se aceptan sin duplicar
+    # estado dentro del dataclass: toda la aplicacion sigue leyendo un unico
+    # nombre canonico.
+    alias = {
+        "id_col": "columna_id",
+        "time_col": "columna_tiempo",
+        "target_col": "columna_target",
+        "random_state": "semilla",
+    }
+    for externo, canonico in alias.items():
+        if externo not in datos:
+            continue
+        if canonico in datos:
+            LOGGER.warning(
+                "Se informaron '%s' y su alias '%s'; prevalece '%s'.",
+                canonico, externo, canonico,
+            )
+        else:
+            datos[canonico] = datos[externo]
+        del datos[externo]
 
     validos = {f.name for f in fields(ConfigPipeline)}
     desconocidos = set(datos) - validos

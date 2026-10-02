@@ -1,5 +1,13 @@
 # Feature Selection para Datos de Panel
 
+<!--
+Data sources / inputs: config.yaml y dataset declarado en entradas.ruta_dataset.
+Created: 2026-07-26
+Last modified: 2026-10-01
+Changelog: 2026-10-01 - FE temporal/KDE opcional, matriz time-safe IF/VAE y
+guía paso a paso para activar correctamente la rama.
+-->
+
 Pipeline modular, reproducible y auditable de selección de variables sobre datos
 de panel (entidad × tiempo). Ejecuta validaciones **univariadas**, **bivariadas**,
 **multivariadas** y una prueba **opcional** con **Boruta / BorutaShap**, deja
@@ -13,9 +21,9 @@ robusta, sin Boruta) pensado para alimentar **Isolation Forest** o un
 
 > **Estado: funcionando y verificado end-to-end**, en ambos flujos.
 > Rama supervisada: 6.923 filas × 31 columnas → **7 variables seleccionadas**
-> de 28 candidatas, ~25 s con Boruta (~4 s sin él).
-> Rama no supervisada (mismo panel, sin target): 28 candidatas → **14
-> seleccionadas**, ~8 s.
+> de 28 candidatas, ~30 s con Boruta (~4 s sin él).
+> Rama no supervisada (mismo panel, sin target): 28 candidatas → **11
+> seleccionadas**, ~10 s.
 
 ---
 
@@ -24,6 +32,76 @@ robusta, sin Boruta) pensado para alimentar **Isolation Forest** o un
 ```powershell
 py run_pipeline.py
 ```
+
+### Activación correcta de la rama de feature engineering
+
+El interruptor está apagado por defecto. **No basta con activar el flag** si
+`context_vars` y `behavior_vars` todavía contienen los nombres de ejemplo:
+primero deben reemplazarse por columnas que realmente existan en el dataset.
+
+1. Configure las columnas de rol y la ruta del panel:
+
+   ```yaml
+   entradas:
+     ruta_dataset: "data/mi_panel.csv"
+     columna_id: "customer_id"
+     columna_tiempo: "month"
+     columna_target: "fraud_flag"  # puede no existir: activa el flujo sin target
+   ```
+
+2. Configure el perfil de comparación y las conductas mensuales. Las
+   `behavior_vars` deben ser numéricas después de la tipificación:
+
+   ```yaml
+   feature_engineering:
+     usar_feature_engineering: true
+     context_vars: ["age_group", "job_position"]
+     behavior_vars: ["credit_count", "credit_amount", "account_balance"]
+     incluir_context_vars_en_seleccion: false
+     kernel_type: "gaussian"
+     reference_mode: "joint_and_marginal"
+     min_group_size: 100
+     min_personal_history: 6
+     bandwidth_method: "time_safe_cv"
+     epsilon: 1.0e-8
+     meses_holdout_anomalia: 3
+   ```
+
+3. Ejecute el pipeline normalmente:
+
+   ```powershell
+   py run_pipeline.py --config config.yaml
+   ```
+
+   Como alternativa, deje `usar_feature_engineering: false` en el YAML y
+   active únicamente esa corrida por CLI. Las listas de contexto y conducta
+   se siguen leyendo del YAML:
+
+   ```powershell
+   py run_pipeline.py --config config.yaml --usar-feature-engineering true
+   ```
+
+Antes de generar variables, el pipeline exige una llave `id × month` única,
+columnas contextuales existentes, conductas numéricas y más periodos que
+`meses_holdout_anomalia`. Si algo no coincide, se detiene con un mensaje
+explícito; no sustituye silenciosamente columnas ni poblaciones de referencia.
+
+Al activarse, cada conducta produce lags/cambios/ventanas personales y rareza
+por KDE frente a perfiles contextuales conjuntos y/o marginales. Solo se usa
+historia anterior al mes evaluado. Todas las columnas generadas ingresan luego
+a las fases normales de depuración y pueden ser descartadas si no aportan.
+
+La misma corrida crea:
+
+- hojas `01e`–`01h` en la bitácora con catálogo, estabilidad mensual, ablación
+  por familia y parámetros de preprocesamiento;
+- `<bitacora>_matriz_anomalias.csv`, numérica y sin nulos, con `TRAIN/HOLDOUT`
+  temporal. Imputación, frequency encoding y escalado robusto se aprenden solo
+  sobre `TRAIN`, por lo que sirve como contrato común para Isolation Forest/VAE.
+
+Para compatibilidad con configuraciones en inglés también se aceptan los alias
+`id_col`, `time_col`, `target_col` y `random_state`; internamente se normalizan
+a la única configuración canónica del proyecto.
 
 Eso es todo. En la primera ejecución el proyecto:
 
@@ -42,6 +120,13 @@ py run_pipeline.py `
     --columna-tiempo     mes_cierre `
     --usar-boruta        true `
     --ruta-salida-excel  outputs/bitacora.xlsx
+```
+
+Suite de tests (cubre hoy el feature engineering opcional: interruptor
+apagado, no-look-ahead, contrato de la matriz IF/VAE):
+
+```powershell
+py -m pytest tests/ -v
 ```
 
 ---
@@ -88,9 +173,11 @@ FeatureSelection/
 │   ├── logging_utils.py       ← logging a consola, archivo y memoria
 │   ├── io_utils.py            ← carga y tipificación de datos
 │   ├── validaciones.py        ← integridad del panel (llave id+tiempo, balance)
-│   ├── metricas.py            ← WOE, IV, Gini, Cramér, VIF, PSI, piso de ruido
+│   ├── metricas.py            ← WOE, IV, Gini, Cramér, VIF, PSI, piso de ruido, clustering de nombres
+│   ├── feature_engineering_anomalias.py ← FE opcional · temporales causales + KDE condicional
 │   ├── fase0_diagnostico.py   ← FASE 0 · diagnóstico inicial
 │   ├── fase1_univariado.py    ← FASE 1 · ceros+nulos y baja variación
+│   ├── fase1b_agrupacion_categorica.py ← FASE 1B · agrupa categóricas de cardinalidad muy alta por nombre
 │   ├── fase2_bivariado.py     ← FASE 2 (con target) · IV, Gini y score compuesto
 │   ├── fase2_no_supervisado.py← FASE 2 (sin target) · Laplacian Score + dispersión
 │   ├── fase3_multivariado.py  ← FASE 3 · correlación, redundancia y VIF
@@ -98,14 +185,20 @@ FeatureSelection/
 │   ├── reporte_excel.py       ← EXPORTACIÓN (sin lógica de decisión)
 │   └── pipeline.py            ← orquestador (bifurca según haya target o no)
 │
+├── tests/
+│   └── test_feature_engineering_anomalias.py ← causalidad + contrato de la matriz IF/VAE
+│
 ├── data/
 │   ├── panel_sintetico.csv    ← generado automáticamente (con target)
 │   └── panel_sin_target.csv   ← ejemplo del flujo no supervisado
-├── docs/documentacion.html    ← documentación técnica y estadística completa
+├── docs/
+│   ├── documentacion.html     ← documentación técnica y estadística completa
+│   └── feature_engineering_anomalias.html ← guía ilustrada del FE opcional
 └── outputs/
     ├── bitacora_feature_selection.xlsx
     ├── bitacora_feature_selection_dataset_final.csv    ← id+tiempo+target + seleccionadas
     ├── bitacora_no_supervisada.xlsx                    ← ejemplo del flujo sin target
+    ├── *_matriz_anomalias.csv                          ← solo si el FE opcional está activo
     └── featsel.log
 ```
 
@@ -115,12 +208,14 @@ capa de exportación — si estuviera ahí, la trazabilidad se rompería.
 
 ---
 
-## 4. Las cuatro fases (y su alternativa sin target)
+## 4. Las fases (y su alternativa sin target)
 
 | Fase | Qué hace **con** target | Qué hace **sin** target (fallback, §9) |
 |---|---|---|
+| **FE** *(opcional, apagado por defecto)* | Temporales causales (lag/diff/media/std/z) + rareza por KDE condicional, antes de todo lo demás. Ver «Activación correcta de la rama de feature engineering» en §1 | Idéntico — no usa el target |
 | **0. Diagnóstico** | Perfil de cada columna: nulos, ceros, percentiles 25/50/75/90/99, únicos, varianza *within*/*between*, ICC | Idéntico — no usa el target |
 | **1. Univariado** | Exceso de ceros+nulos · baja variación (`ceros+nulos ≥ 95%`, std≈0, CV≈0, dominancia ≥99%) | Idéntico — no usa el target |
+| **1B. Agrupación categórica** | Categóricas de cardinalidad muy alta (>100 niveles, sin categoría dominante) se agrupan por similitud de nombre (TF-IDF + K-Means) | Idéntico — no usa el target |
 | **2. Bivariado** | Information Value + Gini → `score_compuesto`. Excluye si IV **y** Gini bajo umbral | **Laplacian Score** + dispersión robusta → `score_compuesto`. Excluye si no supera su piso de ruido por permutación |
 | **3. Multivariado** | Asociación por pares (`\|asoc.\| > 0.90`) + VIF; gana la de mayor `score_compuesto` | Idéntico — el `score_compuesto` de cualquiera de las dos fases 2 es intercambiable aquí |
 | **4. Boruta** *(opcional)* | Importancia condicional vs. *shadow features* | **No se ejecuta**: exige un target contra el que entrenar el contraste |
@@ -227,7 +322,7 @@ El dataset **no se trata como transversal**. Se añade:
 
 ---
 
-## 7. El Excel de bitácora (19 hojas con target · 16 sin target)
+## 7. El Excel de bitácora (20 hojas con target · 17 sin target; +4 con feature engineering activo)
 
 | Hoja | Contenido | ¿Solo con target? |
 |---|---|---|
@@ -237,7 +332,9 @@ El dataset **no se trata como transversal**. Se añade:
 | `01b_Diagnostico_General` | Métricas de cabecera del dataset y del panel | No |
 | `01c_Validacion_Panel` | Llave id+tiempo, balance, target | No |
 | `01d_Target_por_Periodo` | Distribución temporal del target | **Sí** |
+| `01e`–`01h` | Feature engineering: catálogo, estabilidad, ablación, preparación IF/VAE | Solo si `usar_feature_engineering=true` |
 | `02_Univariado` | **Todas** las columnas originales con sus flags y motivos | No |
+| `02b_Agrupacion_Categoricas` | Categóricas de cardinalidad muy alta agrupadas por nombre (fase 1B) | Solo si hubo algo que agrupar |
 | `03_Bivariado` | IV, Gini, score compuesto, pisos de ruido, PSI | **Sí** |
 | `03_Relevancia_NoSuperv` | Laplacian Score, piso de ruido, score compuesto | Solo **sin** target |
 | `04_Multivariado` | Asociación máxima, VIF, redundancias, selección final | No |
@@ -422,5 +519,11 @@ numpy 2.2.6, scipy 1.16.3, scikit-learn 1.7.2, openpyxl 3.1.5, Boruta 0.4.3.
 
 [`docs/documentacion.html`](docs/documentacion.html) — documentación técnica y
 estadística: definiciones formales, derivaciones (WOE, IV, Gini, V de Cramér,
-VIF, PSI, piso de ruido), el porqué de cada decisión de diseño, escalas de
+VIF, PSI, piso de ruido, clustering de nombres por TF-IDF+K-Means, KDE
+condicional para anomalías), el porqué de cada decisión de diseño, escalas de
 interpretación y limitaciones conocidas. Ábrala en el navegador.
+
+[`docs/feature_engineering_anomalias.html`](docs/feature_engineering_anomalias.html)
+— guía ilustrada de una sola página (con diagrama de flujo) específica del
+módulo de feature engineering temporal/KDE opcional; el detalle estadístico
+completo vive en `documentacion.html` §7b.

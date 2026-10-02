@@ -1,5 +1,10 @@
 # =============================================================================
 # config.yaml - FUENTE UNICA DE VERDAD del pipeline de feature selection
+# Data sources / inputs: dataset indicado en entradas.ruta_dataset.
+# Created: 2026-07-26
+# Last modified: 2026-10-01
+# Changelog:
+# - 2026-10-01: configuracion centralizada del FE temporal/KDE y matriz IF/VAE.
 # -----------------------------------------------------------------------------
 # Los nombres de target / id / tiempo se definen SOLO aqui. Ningun modulo del
 # proyecto los tiene escritos a mano: todos los leen del objeto de
@@ -147,3 +152,45 @@ ejecucion:
                                      # detiene con error en vez de generar datos falsos.
                                      # Poner en false para desactivar el auto-generado del todo
                                      # (ej. entornos sellados / produccion).
+
+# -----------------------------------------------------------------------------
+# G. FEATURE ENGINEERING PARA DETECCION DE ANOMALIAS (PREVIO A LA DEPURACION)
+# -----------------------------------------------------------------------------
+# ACTIVACION CORRECTA:
+# 1) cambie context_vars y behavior_vars por columnas REALES del dataset;
+# 2) ponga usar_feature_engineering: true y ejecute `py run_pipeline.py`, O deje
+#    false y active una sola corrida con `--usar-feature-engineering true`;
+# 3) confirme que la consola muestre "FE - Temporales y KDE condicional".
+# El flag CLI solo cambia el interruptor: las listas siempre se leen de este YAML.
+# Cuando esta apagado, el comportamiento del pipeline es identico al historico.
+# Cuando esta encendido, las features generadas entran como candidatas normales
+# a las fases 0-3: si no aportan, las reglas existentes las retiran.
+feature_engineering:
+  usar_feature_engineering: false
+
+  # Ejemplo para la especificacion del caso de uso. Reemplace estos nombres por
+  # columnas reales antes de activar el interruptor.
+  context_vars:
+    - "age_group"
+    - "job_position"
+  behavior_vars:
+    - "credit_count"
+    - "credit_amount"
+    - "account_balance"
+  incluir_context_vars_en_seleccion: false # false: solo definen la poblacion comparable
+
+  kernel_type: "gaussian"
+  reference_mode: "joint_and_marginal" # joint | marginal | joint_and_marginal
+  min_group_size: 100
+  min_personal_history: 6
+  bandwidth_method: "time_safe_cv"     # time_safe_cv | silverman | numero > 0
+  bandwidth_grid: [0.10, 0.20, 0.35, 0.50, 0.75, 1.00]
+  temporal_windows: [3, 6, 12]
+  epsilon: 0.00000001
+  kde_max_reference_rows: 20000
+
+  # Matriz comun para Isolation Forest y VAE. Imputacion, frequency encoding y
+  # RobustScaler se ajustan solo con los meses de TRAIN.
+  preparar_modelos_anomalia: true
+  meses_holdout_anomalia: 3
+  ruta_matriz_anomalias: ""            # "" -> junto al Excel, sufijo _matriz_anomalias.csv

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature engineering temporal y KDE para anomalías</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{--bg:#0f1117;--panel:#171a23;--border:#2a2e3a;--text:#e6e8ee;--muted:#9aa1b2;--accent:#6ea8fe;--ok:#62d49b}
+  *{box-sizing:border-box} body{margin:0;padding:2.5rem 1.5rem;background:var(--bg);color:var(--text);font-family:Segoe UI,Arial,sans-serif;line-height:1.6}
+  .wrap{max-width:980px;margin:auto} h1{font-size:1.7rem;margin-bottom:.25rem}.subtitle{color:var(--muted);margin-bottom:2rem}
+  section{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:1.5rem 1.75rem;margin-bottom:1.5rem}
+  h2{font-size:1.05rem;margin-top:0;color:var(--accent);text-transform:uppercase;letter-spacing:.03em}
+  code,pre{background:#0b0d12;border:1px solid var(--border);border-radius:6px;font-family:Consolas,monospace;font-size:.88rem}code{padding:.15rem .4rem}pre{padding:1rem;overflow:auto}
+  .mermaid{background:#0b0d12;border-radius:8px;padding:1rem;display:flex;justify-content:center}.ok{color:var(--ok)}
+  table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--border);padding:.55rem;text-align:left;vertical-align:top}th{color:var(--accent)}
+</style>
+</head>
+<body><div class="wrap">
+<h1>Feature engineering temporal y KDE para anomalías</h1>
+<div class="subtitle">Integración modular previa a la depuración y feature selection · 2026-10-01</div>
+
+<section><h2>Flujo</h2><div class="mermaid">
+flowchart TD
+  A[Cargar y tipificar panel] --> B{Validación entity x month}
+  B -->|válido| C{usar_feature_engineering}
+  B -->|inválido| X[Detener con error trazable]
+  C -->|false| F[Diagnóstico fase 0]
+  C -->|true| D[Features personales causales<br/>lag, diff, rolling, z]
+  D --> E[KDE condicional histórica<br/>joint y/o marginal]
+  E --> F
+  F --> G[Depuración univariada]
+  G --> H[Relevancia supervisada<br/>o no supervisada]
+  H --> I[Redundancia multivariada]
+  I --> J[Variables seleccionadas]
+  J --> K[Imputar, codificar y escalar<br/>ajuste solo en TRAIN]
+  K --> L[Matriz numérica IF / VAE<br/>TRAIN + HOLDOUT]
+  J --> M[Catálogo, estabilidad<br/>y ablación por familia]
+</div></section>
+
+<section><h2>Resumen</h2>
+<p>La nueva etapa corre después de validar la llave del panel y antes del primer diagnóstico estadístico. Por ello, las features creadas no reciben trato preferencial: entran como candidatas normales y las reglas existentes pueden retirarlas por exceso de nulos, falta de relevancia o redundancia.</p>
+<p>El KDE se usa exclusivamente como generador de variables de rareza. Para una observación del mes <em>t</em>, la referencia contiene solo meses anteriores y el perfil comparable configurado. Cada conducta se procesa por separado.</p>
+</section>
+
+<section><h2>Metadata</h2>
+<p><strong>Data sources / inputs:</strong> DataFrame cargado desde <code>ConfigPipeline.ruta_dataset</code>; columnas id/tiempo, <code>context_vars</code> y <code>behavior_vars</code> de <code>config.yaml</code>.</p>
+<p><strong>Outputs:</strong> DataFrame enriquecido, catálogo/estabilidad de features y CSV numérico en <code>ConfigPipeline.ruta_matriz_anomalias_efectiva</code>.</p>
+<p><strong>Created:</strong> 2026-10-01 &nbsp;|&nbsp; <strong>Last modified:</strong> 2026-10-01</p>
+<p><strong>Changelog:</strong></p>
+<ul>
+<li>2026-10-01: implementación inicial time-safe de lags, ventanas personales, KDE conjunta/marginal, catálogo, estabilidad, ablación y matriz IF/VAE.</li>
+<li>2026-10-01: guía operativa de activación por YAML/CLI, verificaciones y errores esperables.</li>
+</ul>
+</section>
+
+<section><h2>Qué se implementó</h2>
+<table><thead><tr><th>Componente</th><th>Comportamiento</th></tr></thead><tbody>
+<tr><td>Interruptor</td><td><code>usar_feature_engineering</code>; apagado conserva el flujo anterior.</td></tr>
+<tr><td>Contexto</td><td>Por defecto solo define la población comparable (<code>incluir_context_vars_en_seleccion: false</code>) y no entra al detector final.</td></tr>
+<tr><td>Temporales</td><td>Lag 1, diferencia, media, desviación y z-score personal para ventanas configurables; todos desplazados a t-1.</td></tr>
+<tr><td>KDE</td><td><code>-log(densidad)</code> y rareza bilateral empírica por referencia conjunta y/o marginal.</td></tr>
+<tr><td>Bandwidth</td><td><code>time_safe_cv</code> valida en el último periodo histórico y entrena con periodos aún anteriores; Silverman es el fallback.</td></tr>
+<tr><td>Estabilidad</td><td>Cobertura, media, desviación y p95 por feature y periodo.</td></tr>
+<tr><td>Ablación</td><td>Cuenta generación, selección y descarte para familias TEMPORAL y KDE.</td></tr>
+<tr><td>IF/VAE</td><td>Matriz numérica común; categorías por frecuencia e imputación/escalado robusto aprendidos únicamente en TRAIN.</td></tr>
+</tbody></table>
+</section>
+
+<section><h2>Supuestos y decisiones</h2>
+<ul>
+<li>La granularidad es exactamente una fila por entidad y mes; los duplicados siguen siendo bloqueantes.</li>
+<li>Las conductas deben ser numéricas después de la tipificación.</li>
+<li>Un perfil con menos de <code>min_group_size</code> observaciones históricas deja la feature KDE en nulo. No se mezcla silenciosamente con la población global.</li>
+<li>Los nulos iniciales son esperados: representan falta real de historia. La fase univariada decide si su cobertura total basta.</li>
+<li>La matriz preparada no entrena un VAE ni convierte KDE en el modelo final; establece un insumo sin fuga para modelos posteriores.</li>
+</ul>
+</section>
+
+<section><h2>Activación correcta</h2>
+<p><strong>No active solamente el flag con los nombres de ejemplo.</strong> Primero configure columnas que existan en el panel y luego encienda la rama. El orden correcto es el siguiente.</p>
+
+<h3>1. Declare la granularidad y el archivo</h3>
+<pre>entradas:
+  ruta_dataset: "data/mi_panel.csv"
+  columna_id: "customer_id"
+  columna_tiempo: "month"
+  columna_target: "fraud_flag"  # opcional: puede no existir en el archivo</pre>
+
+<h3>2. Declare contexto y conductas reales</h3>
+<pre>feature_engineering:
+  usar_feature_engineering: true
+  context_vars: ["age_group", "job_position"]
+  behavior_vars: ["credit_count", "credit_amount", "account_balance"]
+  incluir_context_vars_en_seleccion: false
+  kernel_type: "gaussian"
+  reference_mode: "joint_and_marginal"
+  min_group_size: 100
+  min_personal_history: 6
+  bandwidth_method: "time_safe_cv"
+  temporal_windows: [3, 6, 12]
+  epsilon: 1.0e-8
+  preparar_modelos_anomalia: true
+  meses_holdout_anomalia: 3</pre>
+<ul>
+<li><code>context_vars</code>: columnas que definen la población comparable; pueden ser categóricas o numéricas discretas.</li>
+<li><code>behavior_vars</code>: medidas mensuales que se evalúan una por una; deben quedar numéricas después de la tipificación.</li>
+<li><code>incluir_context_vars_en_seleccion: false</code>: opción recomendada para que atributos de perfil no lleguen directamente al detector.</li>
+</ul>
+
+<h3>3. Ejecute por una de estas dos vías</h3>
+<p><strong>Activación persistente en YAML</strong> — si ya dejó <code>usar_feature_engineering: true</code>:</p>
+<pre>py run_pipeline.py --config config.yaml</pre>
+<p><strong>Activación solo para una corrida</strong> — deje el interruptor en <code>false</code> y sobrescríbalo por CLI:</p>
+<pre>py run_pipeline.py --config config.yaml --usar-feature-engineering true</pre>
+<p>El flag de CLI solo cambia el interruptor. <code>context_vars</code>, <code>behavior_vars</code> y los demás parámetros continúan leyéndose desde el YAML.</p>
+
+<h3>4. Confirme la activación</h3>
+<ul>
+<li>La barra de progreso debe mostrar <code>FE - Temporales y KDE condicional</code> antes de <code>Fase 0</code>.</li>
+<li>La bitácora debe contener las hojas <code>01e_FE_Catalogo</code>, <code>01f_FE_Estabilidad</code>, <code>01g_FE_Ablacion</code> y <code>01h_Prep_IF_VAE</code>.</li>
+<li>Si <code>preparar_modelos_anomalia: true</code>, se crea el CSV con sufijo <code>_matriz_anomalias.csv</code>.</li>
+</ul>
+
+<h3>Validaciones previas y errores esperables</h3>
+<table><thead><tr><th>Condición</th><th>Resultado</th></tr></thead><tbody>
+<tr><td>Falta una variable configurada</td><td>Se detiene y lista las columnas faltantes.</td></tr>
+<tr><td>Una conducta no es numérica</td><td>Se detiene antes de calcular temporales/KDE.</td></tr>
+<tr><td>La llave entidad × mes está duplicada</td><td>La validación estructural bloquea la corrida.</td></tr>
+<tr><td>Hay pocos datos históricos en un perfil</td><td>La feature KDE queda nula hasta alcanzar <code>min_group_size</code>; no se usa una población global oculta.</td></tr>
+<tr><td>No hay más meses que el holdout configurado</td><td>No se exporta una matriz inválida; se informa que debe reducirse <code>meses_holdout_anomalia</code> o aportar más historia.</td></tr>
+</tbody></table>
+
+<p>También se aceptan los alias <code>id_col</code>, <code>time_col</code>, <code>target_col</code> y <code>random_state</code>. Internamente se normalizan a la configuración canónica del proyecto.</p>
+</section>
+
+<section><h2>Verificación realizada</h2>
+<p class="ok">✓ Compilación completa; ✓ <code>py -m pytest tests/</code> en verde (interruptor apagado, no look-ahead del primer/último mes, matriz sin nulos con TRAIN/HOLDOUT); ✓ regresión end-to-end con FE apagado (resultado idéntico al histórico); ✓ integración end-to-end con FE activado.</p>
+<p>Corrida reproducible contra <code>data/panel_sintetico.csv</code> (6.923 filas) con <code>context_vars=["cat_region","cat_segmento"]</code>, <code>behavior_vars=["var_monto_deuda","var_ingreso_estimado"]</code> y el resto de parámetros por defecto: <strong>34 features generadas</strong> (22 TEMPORAL + 12 KDE) → <strong>14 sobreviven</strong> la selección completa (41.2%) → matriz IF/VAE de 5.765 filas TRAIN / 1.158 HOLDOUT y 21 variables. El recuento exacto depende de cuántas <code>behavior_vars</code>/<code>temporal_windows</code>/<code>context_vars</code> se configuren; esta cifra es reproducible con la configuración indicada, no un valor fijo del módulo. Ver <a href="documentacion.html#fe-anomalias">documentacion.html §7b</a> para la justificación estadística completa de cada decisión de diseño.</p>
+</section>
+</div><script>mermaid.initialize({startOnLoad:true,theme:"dark"});</script></body></html>
