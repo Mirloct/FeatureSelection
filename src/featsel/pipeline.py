@@ -9,8 +9,11 @@ Metadata
 --------
 Data sources / inputs: dataset de ``cfg.ruta_dataset`` y ``config.yaml``.
 Created: 2026-08-31
-Last modified: 2026-10-01
+Last modified: 2026-10-02
 Changelog:
+- 2026-10-02: prepara puestos antes del diagnostico y usa el grupo en KDE/salida.
+- 2026-10-02: elimina columnas_excluidas antes del analisis y conserva columnas_conservadas.
+- 2026-10-02: conserva las exclusiones manuales al final del dataset exportado.
 - 2026-10-01: se inserto FE temporal/KDE antes del diagnostico y se agrego la
   preparacion time-safe de la matriz comun para Isolation Forest/VAE.
 
@@ -65,6 +68,7 @@ from . import (
     fase4_boruta,
     feature_engineering_anomalias,
     io_utils,
+    puestos,
     reporte_excel,
     validaciones,
 )
@@ -94,7 +98,7 @@ def _construir_embudo(
             "criterio_aplicado": (
                 f"Se apartan las columnas de rol (target='{cfg.columna_target}', "
                 f"id='{cfg.columna_id}', tiempo='{cfg.columna_tiempo}') "
-                f"y {len(cfg.columnas_excluidas)} exclusiones manuales."
+                f"y {len(cfg.columnas_conservadas)} columnas conservadas sin evaluar."
             ),
         },
         {
@@ -221,8 +225,10 @@ def _construir_resumen(
     add("B. Entradas", "usar_boruta", cfg.usar_boruta,
         "Controla la ejecucion de la fase 4." )
     add("B. Entradas", "ruta_salida_excel", cfg.ruta_salida_excel, "Destino de esta bitacora.")
+    add("B. Entradas", "columnas_conservadas", ", ".join(cfg.columnas_conservadas) or "(ninguna)",
+        "Columnas sin evaluar; se conservan al final del dataset exportado.")
     add("B. Entradas", "columnas_excluidas", ", ".join(cfg.columnas_excluidas) or "(ninguna)",
-        "Columnas apartadas por decision del usuario, sin evaluar.")
+        "Columnas excluidas completamente del analisis y la exportacion.")
 
     _agregar_resumen_fe(add, cfg, catalogo_fe, ablacion_fe)
 
@@ -494,7 +500,7 @@ def _construir_embudo_no_supervisado(
             "criterio_aplicado": (
                 f"MODO NO SUPERVISADO: no se encontro columna_target='{cfg.columna_target}'. "
                 f"Se apartan id='{cfg.columna_id}', tiempo='{cfg.columna_tiempo}' "
-                f"y {len(cfg.columnas_excluidas)} exclusiones manuales."
+                f"y {len(cfg.columnas_conservadas)} columnas conservadas sin evaluar."
             ),
         },
         {
@@ -616,8 +622,10 @@ def _construir_resumen_no_supervisado(
     add("B. Entradas", "columna_id", cfg.columna_id, f"{rep_val.n_entidades} entidades distintas.")
     add("B. Entradas", "columna_tiempo", cfg.columna_tiempo, f"{rep_val.n_periodos} periodos distintos.")
     add("B. Entradas", "ruta_salida_excel", cfg.ruta_salida_excel, "Destino de esta bitacora.")
+    add("B. Entradas", "columnas_conservadas", ", ".join(cfg.columnas_conservadas) or "(ninguna)",
+        "Columnas sin evaluar; se conservan al final del dataset exportado.")
     add("B. Entradas", "columnas_excluidas", ", ".join(cfg.columnas_excluidas) or "(ninguna)",
-        "Columnas apartadas por decision del usuario, sin evaluar.")
+        "Columnas excluidas completamente del analisis y la exportacion.")
     add("B. Entradas", "Modelos objetivo declarados", "Isolation Forest, autoencoder variacional (VAE)",
         "Justifica la eleccion de Laplacian Score + dispersion robusta como criterios de la fase 2.")
 
@@ -822,35 +830,33 @@ def _exportar_dataset_final(
     df: pd.DataFrame, cfg: ConfigPipeline, variables_seleccionadas: list[str],
     modo_supervisado: bool = True,
 ) -> str | None:
-    """Exporta id + tiempo [+ target] + solo las variables que superaron las
-    fases obligatorias, en un unico archivo listo para modelar.
+    """Exporta roles + seleccionadas + exclusiones manuales presentes.
 
-    Se genera SIEMPRE con las columnas de rol primero (id, tiempo y, si el
-    dataset la tiene, target), de modo que el archivo sea legible de inmediato
-    y quede claro cual es la llave del panel. En el flujo NO SUPERVISADO no
-    hay columna target que incluir: el archivo queda con id + tiempo + las
-    variables seleccionadas, listo para Isolation Forest o un VAE.
-
-    No se incluyen columnas que no superaron la seleccion, ni siquiera para
-    referencia: ese detalle ya vive en la bitacora Excel (`06b_Descartadas`).
-    Este archivo tiene un unico proposito, ser el insumo directo de un
-    modelo, y mezclar variables descartadas lo contaminaria.
+    Las exclusiones manuales no participan en la seleccion, pero viajan al
+    final en el orden declarado en cfg.columnas_conservadas, sin duplicados.
+    Se exportan incluso cuando ninguna candidata supera las fases. Las
+    columnas descartadas por criterios estadisticos siguen fuera del archivo.
     """
     if not cfg.exportar_dataset_final:
         LOGGER.info("Exportacion del dataset final OMITIDA (exportar_dataset_final=False).")
         return None
 
-    if not variables_seleccionadas:
+    manuales = list(dict.fromkeys(c for c in cfg.columnas_conservadas if c in df.columns))
+    if not variables_seleccionadas and not manuales:
         LOGGER.warning(
-            "Ninguna variable supero las fases obligatorias: no se exporta dataset final "
-            "(quedaria solo con las columnas de rol)."
+            "Sin variables seleccionadas ni exclusiones manuales presentes: "
+            "no se exporta dataset final (quedaria solo con las columnas de rol)."
         )
         return None
 
     columnas_rol = [cfg.columna_id, cfg.columna_tiempo]
     if modo_supervisado:
         columnas_rol.append(cfg.columna_target)
-    columnas_finales = columnas_rol + [c for c in variables_seleccionadas if c not in columnas_rol]
+    seleccionadas = list(dict.fromkeys(
+        c for c in variables_seleccionadas
+        if c not in columnas_rol and c not in manuales and c not in cfg.columnas_excluidas
+    ))
+    columnas_finales = columnas_rol + seleccionadas + [c for c in manuales if c not in columnas_rol]
     df_final = df[columnas_finales].copy()
 
     ruta = cfg.ruta_dataset_final_efectiva
@@ -862,10 +868,10 @@ def _exportar_dataset_final(
         df_final.to_csv(ruta, index=False, sep=cfg.csv_sep, encoding=cfg.csv_encoding)
 
     LOGGER.info(
-        "Dataset final exportado: %s (%d filas x %d columnas: %s + %d variables seleccionadas).",
+        "Dataset final exportado: %s (%d filas x %d columnas: %s + %d seleccionadas + %d manuales conservadas).",
         ruta.resolve(), df_final.shape[0], df_final.shape[1],
         "id+tiempo+target" if modo_supervisado else "id+tiempo (sin target: modo no supervisado)",
-        len(variables_seleccionadas),
+        len(seleccionadas), len(manuales),
     )
     return str(ruta.resolve())
 
@@ -896,6 +902,8 @@ def ejecutar(
 
     # === Carga y tipificacion =============================================
     df = io_utils.cargar_dataset(cfg)
+    df = df.drop(columns=cfg.columnas_excluidas, errors="ignore")
+    df, cfg = puestos.preparar(df, cfg)
     df, tipos = io_utils.tipificar_dataset(df, cfg)
 
     # === Validacion estructural del panel ==================================
@@ -1090,7 +1098,7 @@ def ejecutar(
     ruta = reporte_excel.exportar(resultados, cfg.ruta_salida_excel)
     resultados["ruta_excel"] = str(ruta)
 
-    # Dataset "listo para modelar": id + tiempo [+ target] + solo lo seleccionado.
+    # Dataset final: id + tiempo [+ target] + seleccionadas + exclusiones manuales.
     resultados["ruta_dataset_final"] = _exportar_dataset_final(
         df, cfg, resultados["variables_seleccionadas"], modo_supervisado=rep_val.modo_supervisado
     )

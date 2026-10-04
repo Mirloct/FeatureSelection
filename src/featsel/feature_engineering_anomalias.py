@@ -11,10 +11,12 @@ columnas id/tiempo, ``context_vars`` y ``behavior_vars`` de ``config.yaml``.
 Outputs: DataFrame enriquecido, catalogo/estabilidad de features y CSV numerico
 en ``ConfigPipeline.ruta_matriz_anomalias_efectiva``.
 Created: 2026-10-01
-Last modified: 2026-10-01
+Last modified: 2026-10-04
 Changelog:
 - 2026-10-01: implementacion inicial time-safe de lags, ventanas personales,
   KDE conjunta/marginal, catalogo, estabilidad, ablacion y matriz IF/VAE.
+- 2026-10-04: protege columnas originales, separa contextos nulos y valida
+  infinitos y colisiones de nombres antes de calcular KDE.
 
 La regla central de causalidad es estricta: una fila del mes t solo utiliza
 observaciones de meses anteriores. El mes corriente nunca forma parte de su
@@ -61,6 +63,8 @@ class ResultadoPreparacionModelos:
 
 
 def _validar_columnas(df: pd.DataFrame, cfg: ConfigPipeline) -> None:
+    if not df.columns.is_unique:
+        raise ErrorFeatureEngineering("El dataset contiene nombres de columnas duplicados.")
     requeridas = [cfg.columna_id, cfg.columna_tiempo, *cfg.context_vars, *cfg.behavior_vars]
     faltantes = [c for c in requeridas if c not in df.columns]
     if faltantes:
@@ -73,6 +77,20 @@ def _validar_columnas(df: pd.DataFrame, cfg: ConfigPipeline) -> None:
         raise ErrorFeatureEngineering(
             f"Las behavior_vars deben ser numericas despues de tipificar: {no_numericas}."
         )
+    infinitas = [c for c in cfg.behavior_vars
+                 if np.isinf(df[c].to_numpy(dtype=float, na_value=np.nan)).any()]
+    if infinitas:
+        raise ErrorFeatureEngineering(f"Las behavior_vars deben contener valores finitos o nulos: {infinitas}.")
+    nombres = []
+    for behavior in cfg.behavior_vars:
+        nombres.extend(_nombre("temporal", behavior, suffix) for suffix in
+                       ["lag1", "diff1", *[f"{stat}_{w}" for w in sorted(set(int(w) for w in cfg.temporal_windows))
+                                          for stat in ("mean", "std", "personal_z")]])
+        nombres.extend(_nombre("kde", behavior, scope, suffix)
+                       for scope, _ in _claves_referencia(cfg)
+                       for suffix in ("neglog_density", "tail_rarity"))
+    if len(nombres) != len(set(nombres)):
+        raise ErrorFeatureEngineering("Hay colisiones en los nombres normalizados de features; renombre las columnas configuradas.")
     colisiones = [c for c in df.columns if str(c).startswith(PREFIJO_FE)]
     if colisiones:
         raise ErrorFeatureEngineering(
@@ -101,8 +119,7 @@ def _agregar_temporales(
     df: pd.DataFrame, cfg: ConfigPipeline, catalogo: list[dict[str, Any]],
 ) -> pd.DataFrame:
     """Crea lags y estadisticos personales desplazados un periodo."""
-    orden_original = np.arange(len(df))
-    work = df.assign(__orden_original=orden_original).sort_values(
+    work = df.reset_index(drop=True).sort_values(
         [cfg.columna_id, cfg.columna_tiempo], kind="mergesort"
     )
 
@@ -144,7 +161,7 @@ def _agregar_temporales(
                 _fila_catalogo(col_z, "TEMPORAL", behavior, "personal", f"Z robusto causal contra t-{ventana}..t-1."),
             ])
 
-    return work.sort_values("__orden_original").drop(columns="__orden_original").reset_index(drop=True)
+    return work.sort_index().reset_index(drop=True)
 
 
 def _fila_catalogo(
@@ -229,15 +246,15 @@ def _agregar_kde(
     periodos = _periodos_ordenados(work[cfg.columna_tiempo])
     scopes = _claves_referencia(cfg)
 
-    # Strings normalizados hacen que NaN sea un estrato explicito y comparable.
-    ctx = work[cfg.context_vars].astype("string").fillna("__MISSING__")
-    for c in cfg.context_vars:
-        work[f"__ctx__{c}"] = ctx[c]
+    # Un marco separado protege las columnas del usuario. El codigo -1 para
+    # nulos nunca coincide con una categoria literal, incluido '__MISSING__'.
+    ctx = pd.DataFrame({c: pd.factorize(work[c].astype("string"))[0]
+                        for c in cfg.context_vars}, index=work.index)
 
     for behavior in cfg.behavior_vars:
         valores = pd.to_numeric(work[behavior], errors="coerce")
         for scope, cols_originales in scopes:
-            cols = [f"__ctx__{c}" for c in cols_originales]
+            cols = cols_originales
             col_nll = _nombre("kde", behavior, scope, "neglog_density")
             col_tail = _nombre("kde", behavior, scope, "tail_rarity")
             salida_nll = pd.Series(np.nan, index=work.index, dtype=float)
@@ -251,8 +268,8 @@ def _agregar_kde(
                 if not mask_actual.any() or not mask_pasado.any():
                     continue
 
-                actual = work.loc[mask_actual, cols]
-                pasado = work.loc[mask_pasado, cols]
+                actual = ctx.loc[mask_actual, cols]
+                pasado = ctx.loc[mask_pasado, cols]
                 grupos_pasados = pasado.groupby(cols, dropna=False, sort=False).groups
 
                 for clave, idx_actual_local in actual.groupby(cols, dropna=False, sort=False).groups.items():
@@ -300,7 +317,7 @@ def _agregar_kde(
                 ),
             ])
 
-    return work.drop(columns=[f"__ctx__{c}" for c in cfg.context_vars])
+    return work
 
 
 def _evaluar_estabilidad(

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Auditoría final: tres iteraciones</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --border: #2a2e3a;
+    --text: #e6e8ee;
+    --muted: #9aa1b2;
+    --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.5rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+  section h2 {
+    font-size: 1.05rem;
+    margin-top: 0;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  code, pre {
+    background: #0b0d12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.15rem 0.4rem;
+    font-family: "SF Mono", Consolas, Menlo, monospace;
+    font-size: 0.85rem;
+  }
+  pre { padding: 1rem; overflow-x: auto; }
+  .mermaid { background: #0b0d12; border-radius: 8px; padding: 1rem; display: flex; justify-content: center; }
+  ul { padding-left: 1.2rem; }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0.15rem 0.6rem;
+    margin-left: 0.5rem;
+  }
+</style>
+</head>
+<!-- Data sources / inputs: config.yaml, muestras sinteticas en memoria y CSV temporales.
+Created: 2026-10-04
+Last modified: 2026-10-04
+Changelog: 2026-10-04: tres iteraciones de pruebas, correcciones matematicas y estructura final. -->
+<body><div class="wrap"><h1>Auditoría final: tres iteraciones</h1>
+<p class="subtitle">FeatureSelection · 2026-10-04 · 115 pruebas aprobadas</p>
+<section><h2>Resultado</h2><p>Se validaron cálculos con referencias independientes, decisiones adversarias y salidas reales del pipeline. Se añadieron 24 pruebas a las 91 existentes. KDE permanece apagado en config.yaml, con nombres generales.</p>
+<p>Las correcciones de VIF y permutaciones pueden cambiar la selección. Con pocas permutaciones, el test puede no tener resolución para rechazar la hipótesis de ruido.</p></section>
+<section><h2>Iteraciones ejecutadas</h2><table>
+<tr><th>Iteración</th><th>Comando</th><th>Resultado</th></tr>
+<tr><td>1 · Fundamentos</td><td>py -m pytest tests/test_fundamentos_matematicos.py -q</td><td>9 aprobadas; primero se reprodujo un fallo en VIF singular.</td></tr>
+<tr><td>2 · Código</td><td>py -m pytest tests/test_iteracion_codigo.py tests/test_kde_adversarial.py -q</td><td>42 aprobadas: 9 nuevas y 33 de KDE.</td></tr>
+<tr><td>3 · Estructura</td><td>py -m pytest tests/test_estructura_final.py -q</td><td>6 aprobadas; incluye cuatro corridas completas.</td></tr>
+<tr><td>Regresión completa</td><td>py -m pytest -q</td><td>115 aprobadas.</td></tr></table>
+<p>Las iteraciones incluyeron reproducción de fallos, corrección y repetición. Durante la limpieza de comentarios se eliminaron por error declaraciones del esquema: la suite detectó el problema, se restauraron y se añadió una prueba que compara los campos con el YAML central.</p></section>
+<section><h2>Referencias matemáticas independientes</h2><ul>
+<li>WOE/IV: conteos manuales con corrección 0.5; distribuciones suman 1, IV=0 con independencia y simetría al invertir evento.</li>
+<li>AUC/Gini: comparación de todos los pares evento/no evento, con medio crédito para empates; Gini=2·AUC−1 y simetría de signo.</li>
+<li>PSI: divergencia simétrica con suavizado; identidad cero y simetría.</li>
+<li>Eta/Cramér: separación perfecta produce asociación 1.</li>
+<li>VIF: comparación con regresiones auxiliares; dependencia exacta produce infinito y una variable ortogonal mantiene VIF=1.</li>
+<li>Laplacian Score: cociente entre energía por aristas y varianza ponderada por grados; invariante ante desplazamiento y escala no nula.</li>
+<li>KDE gaussiana: comparación con la suma explícita de densidades normales; rareza bilateral contrastada con conteos históricos.</li>
+</ul></section>
+<section><h2>Fallos y correcciones</h2><table>
+<tr><th>Fallo</th><th>Corrección</th></tr>
+<tr><td>Pseudoinversa daba VIF &lt; 1 con dependencia exacta.</td><td>Inversa para matrices de rango completo; regresión por columna para matrices singulares. La dependencia exacta produce infinito.</td></tr>
+<tr><td>Flag de VIF alto ignoraba infinito.</td><td>Comparar valores no nulos con el umbral; infinito activa el flag.</td></tr>
+<tr><td>P-valores Monte Carlo podían valer cero.</td><td>p=(1+b)/(B+1), donde b cuenta scores permutados ≤ observado.</td></tr>
+<tr><td>Alpha se recortaba a [0.000001, 0.5].</td><td>Respetar alpha configurado y dividir por el número de contrastes al aplicar Bonferroni.</td></tr>
+<tr><td>Grafo incluía autoaristas con filas duplicadas.</td><td>Eliminar el propio índice; no asumir que aparece como primer vecino.</td></tr>
+<tr><td>Desempate omitía Gini y trataba scores cercanos como iguales.</td><td>Desempatar solo igualdad exacta de score; luego mayor IV y Gini. Si todo coincide, conservar el orden de entrada.</td></tr>
+<tr><td>Documentación equiparaba Spearman con Somers D.</td><td>Aclarar que Spearman es un sustituto de asociación monótona, no esa equivalencia.</td></tr></table>
+<p>El cuantil de scores permutados es diagnóstico; la decisión usa p &lt; alpha efectivo. La resolución mínima es 1/(B+1); con 200 permutaciones, 1/201.</p></section>
+<section><h2>Estructura final comprobada</h2><ul>
+<li>Con/sin target × FE encendido/apagado; Boruta desactivado para estas corridas.</li>
+<li>CSV: conserva filas y orden; columnas id, tiempo, target si existe, seleccionadas y conservadas. Excluidas y roles no entran como candidatas.</li>
+<li>Excel: hoja de relevancia según rama, selección final y encabezados que empiezan por '=' escritos como texto.</li>
+<li>IF/VAE: matriz finita, roles y split temporal; alterar HOLDOUT no modifica TRAIN ni el esquema de transformaciones.</li>
+<li>ConfigPipeline cubre exactamente las claves de config.yaml. El interruptor FE continúa en false.</li></ul></section>
+<section><h2>Flujo final</h2><div class="mermaid">
+flowchart TD
+ A[config.yaml y dataset] --> B[Excluir columnas y preparar puestos]
+ B --> C[Tipificar y validar panel]
+ C --> D{FE activo}
+ D -->|Sí| E[Temporales y KDE causal]
+ D -->|No| F[Diagnóstico y univariado]
+ E --> F
+ F --> G[Agrupación categórica opcional]
+ G --> H{Target presente}
+ H -->|Sí| I[IV y Gini]
+ H -->|No| J[Laplacian Score y permutaciones]
+ I --> K[Asociación y VIF]
+ J --> K
+ K --> L[Selección y descartes auditados]
+ L --> M[Excel y dataset final]
+ L --> N{Preparar IF/VAE}
+ N -->|Sí| O[Transformaciones aprendidas en TRAIN]
+ O --> P[Matriz TRAIN y HOLDOUT]
+</div></section>
+<section><h2>Fuentes y metadatos</h2>
+<p>Fuentes de pruebas: config.yaml, muestras sintéticas en memoria y CSV temporales. No se usaron datos reales.</p>
+<p><a href="https://www.statsmodels.org/stable/_modules/statsmodels/stats/outliers_influence.html">statsmodels: VIF por regresión auxiliar</a>; <a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats/permutation_test.html">SciPy: corrección +1 en permutaciones aleatorias</a>; <a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.somersd.html">SciPy: definición de Somers D</a>.</p>
+<p>metricas.py: entrada Series/DataFrames de ConfigPipeline.ruta_dataset; creado 2026-08-26, modificado 2026-10-04. Cambios: VIF singular, distinción Spearman/Somers D, Monte Carlo +1 y vecinos sin autoaristas.</p>
+<p>fase3_multivariado.py: entrada panel y scores de fase 2; creado 2026-08-26, modificado 2026-10-04. Cambios: VIF infinito y desempate IV/Gini.</p>
+<p>fase2_no_supervisado.py: entrada panel, diagnóstico y config.yaml; creado 2026-08-26, modificado 2026-10-04. Cambio: aviso de resolución Monte Carlo con +1.</p>
+<p>Las tres pruebas nuevas se crearon y modificaron el 2026-10-04. Fuentes: muestras en memoria, CSV temporales y config.yaml.</p></section>
+<section><h2>Uso y límites</h2><p>Ejecute <code>py -m pytest -q</code> para repetir la suite. Configure sus columnas únicamente en config.yaml. Para activar KDE, reemplace context_vars y behavior_vars por columnas reales y cambie usar_feature_engineering a true.</p>
+<p>La evidencia valida las fórmulas y contratos cubiertos; no demuestra cobertura exhaustiva ni desempeño de un modelo de anomalías. No se entrenó IF/VAE, ni se hizo evaluación out-of-time sobre datos reales. Boruta y clustering no reciben una validación matemática exhaustiva en esta revisión.</p>
+<p><a href="documentacion.html">Documentación general</a> · <a href="feature_engineering_anomalias.html">KDE</a> · <a href="configuracion_centralizada.html">Configuración</a></p></section>
+</div><script>mermaid.initialize({startOnLoad:true,theme:"dark"});</script></body></html>

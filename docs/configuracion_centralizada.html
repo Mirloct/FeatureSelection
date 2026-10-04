@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Configuración centralizada</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --border: #2a2e3a;
+    --text: #e6e8ee;
+    --muted: #9aa1b2;
+    --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.5rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+  section h2 {
+    font-size: 1.05rem;
+    margin-top: 0;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  code, pre {
+    background: #0b0d12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.15rem 0.4rem;
+    font-family: "SF Mono", Consolas, Menlo, monospace;
+    font-size: 0.85rem;
+  }
+  pre { padding: 1rem; overflow-x: auto; }
+  .mermaid { background: #0b0d12; border-radius: 8px; padding: 1rem; display: flex; justify-content: center; }
+  ul { padding-left: 1.2rem; }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0.15rem 0.6rem;
+    margin-left: 0.5rem;
+  }
+</style>
+</head>
+<!-- Data sources / inputs: config.yaml y overrides de run_pipeline.py.
+Created: 2026-10-02
+Last modified: 2026-10-04
+Changelog: 2026-10-02: guia de configuracion centralizada.
+- 2026-10-04: mapa directo de columnas y estado KDE apagado.
+- 2026-10-04: prueba de integridad del esquema y enlace a auditoria final. -->
+<body>
+<div class="wrap">
+  <h1>Configuración centralizada</h1>
+  <div class="subtitle">Feature Selection · 2026-10-04</div>
+
+  <section>
+    <h2>Flujo</h2>
+    <div class="mermaid">
+flowchart TD
+  A[config.yaml central] --> B[Esquema ConfigPipeline]
+  C[YAML alternativo opcional] --> D[Aplicar overrides]
+  B --> D
+  E[Flags CLI] --> D
+  D --> F{Configuración válida}
+  F -->|No| G[Error explícito]
+  F -->|Sí| H[Logging según YAML]
+  H --> I[Bootstrap según YAML]
+  I --> J[Demo si corresponde]
+  J --> K[Pipeline y exportaciones]
+    </div>
+  </section>
+
+  <!-- The sections below are omitted entirely for the "simple" (diagram-only) case.
+       Include them only for the combined complex-code report. -->
+
+  <section>
+    <h2>Descripción</h2>
+    <p>Modifique valores únicamente en <code>config.yaml</code>. El módulo Python declara los tipos, las propiedades derivadas y las validaciones. No mantiene otra copia de los valores.</p>
+  </section>
+
+  <section><h2>Dónde ingresar columnas</h2>
+<p>Edite solo <code>config.yaml</code>. KDE permanece apagado con nombres de ejemplo.</p>
+<ul><li><code>entradas</code>: ruta_dataset, columna_id, columna_tiempo, columna_target y listas manuales.</li>
+<li><code>feature_engineering.context_vars</code>: nombres de columnas para definir grupos comparables.</li>
+<li><code>feature_engineering.behavior_vars</code>: nombres de columnas numéricas cuya rareza quiere medir.</li>
+<li><code>puestos_colaborador.columnas_puesto_prioridad</code>: fuentes opcionales de puesto.</li></ul>
+<p>Después de reemplazar los ejemplos, active <code>usar_feature_engineering: true</code>.
+<code>kernel_type</code> selecciona el kernel; no recibe columnas.</p></section>
+<section><h2>Auditoría final</h2><p><a href="auditoria_final.html">Tres iteraciones y correcciones matemáticas</a>. El esquema de ConfigPipeline coincide con todas las claves del YAML central.</p></section>
+<section><h2>Vigencia</h2><p>Revisado el 2026-10-04. Fuente de valores: <code>config.yaml</code>. Validación: <code>py -m pytest -q</code>, 115 pruebas aprobadas. Los detalles de implementación y su historial se mantienen en los módulos Python.</p></section>
+
+  <section>
+    <h2>Comportamiento</h2>
+    <p>ConfigPipeline() y cargar_config() leen la misma fuente central. Cada instancia recibe listas independientes. Se rechazan archivos ausentes, raíces inválidas, claves repetidas entre secciones y parámetros obligatorios ausentes del YAML central. Logging y bootstrap respetan ruta_log, nivel_log, usar_boruta y autoinstalar_dependencias.</p>
+  </section>
+
+  <section>
+    <h2>Alcance</h2><p>Configure los valores en YAML. El módulo Python conserva tipos y validaciones. <code>columnas_conservadas</code> se transporta al final sin analizar; <code>columnas_excluidas</code> se retira antes del análisis y no se exporta. Vea la <a href="exclusiones_manuales.html">guía de columnas manuales</a>.</p>
+  </section>
+
+  <section>
+    <h2>Uso</h2>
+    <p>Ejecute <code>py run_pipeline.py</code>. Para otra corrida use <code>--config otro.yaml</code>, que puede ser parcial. Precedencia: YAML central → YAML alternativo → flags. La ruta central se resuelve desde el proyecto; las rutas de datos y salidas se conservan relativas al directorio de ejecución.</p><p>PyYAML es requisito previo: <code>py -m pip install PyYAML</code>. Así puede leerse autoinstalar_dependencias antes de instalar cualquier otra librería. <code>--sin-autoinstall</code> prevalece sobre el YAML.</p><p>Validación: <code>py -m pytest -q</code>, con pruebas de lectura central, precedencia, aliases, independencia de listas, errores de configuración y arranque con bootstrap/pipeline simulados, además de las pruebas existentes de causalidad temporal.</p>
+  </section>
+</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "dark" });
+</script>
+</body>
+</html>

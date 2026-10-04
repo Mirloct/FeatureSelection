@@ -4,6 +4,12 @@ fase2_no_supervisado.py
 
 FASE 2 (RAMA ALTERNATIVA, SIN TARGET) - Relevancia estructural no supervisada.
 
+Data sources / inputs: DataFrame del panel, diagnostico y config.yaml.
+Created: 2026-08-26
+Last modified: 2026-10-04
+Changelog:
+- 2026-10-04: aviso de resolucion Monte Carlo coherente con correccion +1.
+
 Se activa automaticamente cuando ``cfg.columna_target`` no existe en el
 dataset cargado (lo detecta ``validaciones.target_disponible`` y lo propaga
 ``pipeline.py``). Reemplaza la fase bivariada supervisada (IV/Gini, que exigen
@@ -160,8 +166,8 @@ def ejecutar(
 
     if cfg.bonferroni_ruido_laplaciano:
         alpha_bonf = cfg.alpha_ruido_laplaciano / max(len(sobrevivientes), 1)
-        resolucion = 1.0 / max(cfg.laplacian_n_permutaciones, 1)
-        if resolucion > alpha_bonf:
+        resolucion = 1.0 / (cfg.laplacian_n_permutaciones + 1)
+        if resolucion >= alpha_bonf:
             LOGGER.warning(
                 "bonferroni_ruido_laplaciano=True con alpha efectivo=%.5f, pero "
                 "laplacian_n_permutaciones=%d solo resuelve p-valores hasta %.5f: el test "

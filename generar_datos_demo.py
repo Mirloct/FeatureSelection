@@ -5,6 +5,12 @@ generar_datos_demo.py
 
 Generador de un PANEL SINTETICO de demostracion.
 
+Data sources / inputs: config.yaml; salida en cfg.ruta_dataset.
+Created: 2026-08-26
+Last modified: 2026-10-02
+Changelog:
+- 2026-10-02: el arranque directo usa el YAML central y su ruta/nivel de log.
+
 Sirve para dos cosas:
 
 1. Permitir ejecutar el pipeline end-to-end sin datos reales.
@@ -213,5 +219,8 @@ if __name__ == "__main__":
     from featsel.config import cargar_config
     from featsel.logging_utils import configurar_logging
 
-    configurar_logging("outputs/featsel.log")
-    generar_panel_demo(cargar_config("config.yaml"))
+    import logging
+
+    cfg = cargar_config()
+    configurar_logging(cfg.ruta_log, getattr(logging, cfg.nivel_log))
+    generar_panel_demo(cfg)

@@ -72,11 +72,14 @@ DEPENDENCIAS_NUCLEO: tuple[Dependencia, ...] = (
     Dependencia("scipy", "scipy", True, "estadisticos (chi2, rangos, Spearman)"),
     Dependencia("sklearn", "scikit-learn", True, "AUC/Gini, RandomForest para Boruta"),
     Dependencia("openpyxl", "openpyxl", True, "escritura y formato del Excel de bitacora"),
+    # ConfigPipeline() lee SIEMPRE config.yaml (ver src/featsel/config.py,
+    # _leer_yaml): ya no hay defaults en el codigo que sirvan de fallback si
+    # PyYAML falta, asi que es tan critica como pandas o numpy.
+    Dependencia("yaml", "PyYAML", True, "lectura obligatoria de config.yaml; sin fallback a defaults del codigo"),
 )
 
 #: Dependencias de soporte: mejoran el proceso pero admiten fallback.
 DEPENDENCIAS_SOPORTE: tuple[Dependencia, ...] = (
-    Dependencia("yaml", "PyYAML", False, "lectura de config.yaml"),
     Dependencia("joblib", "joblib", False, "paralelismo de scikit-learn"),
     Dependencia("pyarrow", "pyarrow", False, "lectura de .parquet / .feather"),
 )

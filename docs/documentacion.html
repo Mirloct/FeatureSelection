@@ -123,6 +123,11 @@
     border-radius:50%;width:44px;height:44px;font-size:1.15rem;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.28);z-index:99}
 </style>
 </head>
+<!-- Data sources / inputs: config.yaml y modulos src/featsel.
+Created: 2026-07-26
+Last modified: 2026-10-04
+Changelog: 2026-10-04: enlace a auditoria KDE y mapa de columnas.
+- 2026-10-04: fundamentos VIF, Spearman y permutaciones; tres iteraciones de validacion. -->
 <body>
 
 <button class="toggle" id="tt" title="Cambiar tema">◐</button>
@@ -1555,7 +1560,7 @@ decidir por el analista.
 <thead><tr><th>Módulo</th><th>Responsabilidad única</th></tr></thead>
 <tbody>
 <tr><td><code>bootstrap.py</code></td><td>Revisa → instala → confirma dependencias. Solo librería estándar.</td></tr>
-<tr><td><code>config.py</code></td><td>Fuente única de verdad de parámetros + validación previa.</td></tr>
+<tr><td><code>config.py</code></td><td>Esquema, carga desde config.yaml y validación previa; los valores viven en el YAML.</td></tr>
 <tr><td><code>logging_utils.py</code></td><td>Log a consola, archivo y memoria (para la hoja de bitácora).</td></tr>
 <tr><td><code>io_utils.py</code></td><td>Carga y tipificación. Ninguna decisión de selección.</td></tr>
 <tr><td><code>validaciones.py</code></td><td>Integridad del panel: llave, balance, target.</td></tr>
@@ -1574,8 +1579,7 @@ decidir por el analista.
 <section id="bootstrap">
 <h2>6 · Arranque y gestión automática de dependencias</h2>
 
-<p>El proyecto debe poder ejecutarse en un entorno limpio. Eso impone una
-restricción sobre el orden de arranque que conviene entender:</p>
+<p>PyYAML debe estar instalado antes del arranque (<code>py -m pip install PyYAML</code>). El orden vigente es configuración → logging → bootstrap → pipeline. Las opciones de instalación, log y Boruta se leen del YAML antes de iniciar el bootstrap.</p>
 
 <div class="callout warn">
 <strong>Restricción crítica</strong>
@@ -1613,8 +1617,8 @@ pipeline fallaría inmediatamente después de una instalación exitosa.
 <tbody>
 <tr><td><strong>Crítica</strong></td><td>numpy, pandas, scipy, scikit-learn, openpyxl</td>
     <td class="bad-t">Aborta con mensaje explícito</td></tr>
-<tr><td><strong>Soporte</strong></td><td>PyYAML, joblib, pyarrow</td>
-    <td class="warn-t">Se registra; el flujo continúa con valores por defecto</td></tr>
+<tr><td><strong>Requisito previo</strong></td><td>PyYAML</td><td>Si falta, la configuración informa un error; no usa defaults ocultos.</td></tr>
+<tr><td><strong>Soporte</strong></td><td>joblib, pyarrow</td><td>Se registra la disponibilidad; operaciones que requieren estos paquetes pueden fallar si faltan.</td></tr>
 <tr><td><strong>Fase 4</strong></td><td>Boruta, BorutaShap, shap</td>
     <td class="warn-t">Se usa la implementación nativa incluida</td></tr>
 </tbody>
@@ -1653,8 +1657,7 @@ propias columnas a partir de la configuración.
   usar_boruta:        true
   ruta_salida_excel:  "outputs/bitacora_feature_selection.xlsx"</code></pre>
 
-<p><strong>Precedencia:</strong> valores por defecto del código &lt;
-<code>config.yaml</code> &lt; flags de línea de comandos. El YAML admite secciones
+<p><strong>Precedencia:</strong> <code>config.yaml</code> central del proyecto &lt; YAML alternativo parcial &lt; flags de línea de comandos. El YAML admite secciones
 anidadas por legibilidad; se aplanan al cargarlo, de modo que el dataclass no
 necesita conocer esa estructura.</p>
 
@@ -1727,10 +1730,15 @@ no se reemplaza silenciosamente por una referencia global.</p>
 normalizan internamente a <code>columna_id</code>, <code>columna_tiempo</code>,
 <code>columna_target</code> y <code>semilla</code>, respectivamente.</p>
 
+<h3>Puesto del colaborador</h3>
+<p>Antes de tipificar, se detectan las fuentes configuradas. Si hay ambas, se usa <code>despuestocolaborador</code> y se retira <code>desposicioncolaborador</code>. Se crea <code>despuestocolaboradoragrupado</code>, conservado al final junto con la fuente elegida, sin evaluarlos como candidatos.</p>
+<p>La limpieza unifica mayúsculas, tildes, signos, mojibake reversible y abreviaturas habituales. Usa hasta dos palabras para familias/calificadores reconocidos; la primera para otros puestos. Nulos y texto sin palabras usan <code>SIN INFORMACION</code>. El agrupado reemplaza las fuentes en el contexto KDE; otros contextos válidos permanecen. La preparación no activa FE automáticamente.</p>
+<p>Sin fuente, se omite la preparación. CSV reintenta encodings configurados solo ante errores de decoding. Consulte <a href="puestos_colaborador.html">reglas, fallbacks y pruebas de puestos</a>.</p>
+
 <h3>Validación previa</h3>
 <p><code>ConfigPipeline.validar()</code> corre <em>antes</em> de tocar el dataset y
 comprueba: campos obligatorios no vacíos, que las tres columnas de rol sean
-distintas entre sí, que no aparezcan también en <code>columnas_excluidas</code>,
+distintas entre sí, que no aparezcan en <code>columnas_conservadas</code> ni <code>columnas_excluidas</code>, que ambas listas sean disjuntas,
 que las proporciones estén en (0,1], que el umbral alterno sea efectivamente más
 conservador que el principal, y que los pesos del score sumen algo positivo
 (se renormalizan a 1 y se avisa si no sumaban 1).</p>
@@ -1741,7 +1749,7 @@ conservador que el principal, y que los pesos del score sumen algo positivo
 <h2>7b · Feature engineering temporal y KDE condicional (opcional)</h2>
 
 <p>Apagado por defecto (<code>usar_feature_engineering: false</code>): con el
-interruptor apagado el pipeline es byte-idéntico al histórico. Cuando se
+interruptor apagado no se generan features adicionales. Cuando se
 activa, corre <strong>antes</strong> de la fase 0 —común a ambas ramas, no usa
 el target— y genera dos familias de variables candidatas ordinarias a partir
 de cada <code>behavior_var</code> configurada. Guía operativa paso a paso en
@@ -2396,9 +2404,8 @@ merecen revisión de negocio.</p>
 
 <h4>Target continuo</h4>
 <p>Se usa la correlación de rangos de <strong>Spearman</strong> como sustituto: vive
-en [−1, 1], la misma escala del Gini, y coincide con el D de Somers —la
-generalización natural del Gini— salvo por el tratamiento de empates. Se documenta
-explícitamente porque no es el Gini clásico de clasificación.</p>
+en [−1, 1]. No equivale a Somers D ni al Gini clásico de clasificación,
+incluso sin empates. Se conserva como indicador de asociación monótona.</p>
 
 <h3 id="score">11.5 Score compuesto</h3>
 
@@ -2632,8 +2639,10 @@ Detecta colinealidad <strong>múltiple</strong>: una variable que es combinació
 lineal de <em>varias</em> otras sin estar fuertemente correlacionada con ninguna en
 particular. La correlación por pares es ciega a ese caso.
 <br><br>
-Se usa la <strong>pseudo-inversa</strong> porque, con variables casi redundantes,
-la matriz de correlación es singular y la inversa exacta no existe.
+Si la correlación es invertible, se usa su inversa. Si es singular, se calcula
+VIF por regresión de cada variable contra las demás: la pseudoinversa puede
+producir valores menores que 1 y ocultar colinealidad. La dependencia exacta
+se reporta como infinito y activa el flag de VIF alto.
 </div>
 <p>Regla práctica: VIF &gt; 10 indica multicolinealidad severa.</p>
 </section>
@@ -2874,69 +2883,25 @@ significa cada campo y reconstruir qué ocurrió en la corrida.
 <!-- ================================================================= -->
 <section id="dataset-final">
 <h2>18 · Dataset final exportado</h2>
-
-<p>Además del Excel de bitácora, el pipeline exporta <strong>un dataset</strong>
-listo para entrenar un modelo, con exactamente estas columnas y en este orden:</p>
-
-<div class="formula">
-columna_id · columna_tiempo · columna_target · &lt;solo las variables que superaron las fases 1, 2 y 3&gt;
-</div>
-
-<p>En la corrida de referencia: <code>id_entidad</code>, <code>periodo</code>,
-<code>target</code> + las 8 variables de la selección final = <strong>11
-columnas</strong>, 6.923 filas (todas las del panel, sin filtrar observaciones),
-guardado en <code>outputs/bitacora_feature_selection_dataset_final.csv</code>.</p>
-
-<div class="callout why">
-<strong>Por qué es un artefacto separado del Excel y no una hoja más</strong>
-La bitácora está pensada para <strong>auditar el proceso</strong>: incluye
-columnas descartadas, flags, motivos y métricas de cada fase. El dataset final
-está pensado para <strong>alimentar un modelo</strong>: debe contener
-únicamente las columnas que ese modelo va a consumir. Mezclar ambos propósitos
-en un mismo archivo obligaría a quien entrena el modelo a filtrar columnas a
-mano, con el riesgo de arrastrar por error una variable descartada.
-</div>
-
-<h3>Reglas de construcción</h3>
+<p>El Excel audita la selección. El dataset final conserva las filas del panel y ordena las columnas así:</p>
+<div class="formula">id · tiempo · target si existe · seleccionadas · columnas_conservadas</div>
+<table><thead><tr><th>Lista en config.yaml</th><th>Análisis</th><th>Dataset final</th></tr></thead><tbody>
+<tr><td><code>columnas_conservadas</code></td><td>No participan</td><td>Al final, en el orden configurado, sin duplicados; mantienen valores y tipos cargados</td></tr>
+<tr><td><code>columnas_excluidas</code></td><td>Se retiran antes de tipificar</td><td>No se exportan</td></tr>
+</tbody></table>
+<pre><code>entradas:
+  columnas_conservadas: []  # no analizar, pero conservar
+  columnas_excluidas: []    # no analizar ni exportar</code></pre>
+<p>Las dos listas están juntas. No pueden compartir columnas ni incluir id, tiempo o target. Los nombres inexistentes de conservadas se ignoran con advertencia.</p>
 <ul>
-  <li>Las columnas de rol van <strong>siempre primero</strong>, en el orden
-      id → tiempo → target, para que el archivo sea legible de inmediato y no
-      haya ambigüedad sobre cuál es la llave del panel.</li>
-  <li>Solo se incluyen las variables con <code>flg_seleccion_final = 1</code> de
-      la fase 3 (es decir, las que superaron univariado, bivariado <em>y</em>
-      multivariado). El resultado de Boruta —contraste, no criterio de
-      inclusión— no filtra este archivo.</li>
-  <li>Se exportan <strong>todas las filas</strong> del panel tal como llegaron
-      tipificadas, sin imputar ni descartar observaciones: esa decisión le
-      corresponde a la etapa de modelado, no a la selección de variables.</li>
-  <li>Si ninguna variable supera las tres fases, no se genera el archivo — un
-      dataset con solo las tres columnas de rol no tendría utilidad— y se deja
-      constancia en el log.</li>
+<li>Las seleccionadas son las que superan las fases 1, 2 y 3; Boruta solo contrasta.</li>
+<li>Las descartadas estadísticamente no se agregan al archivo final.</li>
+<li>Se exporta incluso sin seleccionadas cuando hay conservadas presentes. Sin ambas, se omite.</li>
+<li><code>exportar_dataset_final: false</code> omite esta salida. <code>formato_dataset_final</code> acepta CSV o Parquet.</li>
+<li>Si <code>ruta_dataset_final</code> está vacía, se deriva junto al Excel como <code>&lt;bitacora&gt;_dataset_final.&lt;formato&gt;</code>.</li>
+<li>Esta exportación no imputa ni elimina filas. La matriz IF/VAE es otra salida: usa seleccionadas y ajusta el preprocesamiento solo en TRAIN.</li>
 </ul>
-
-<h3>Configuración</h3>
-<div class="tablewrap">
-<table>
-<thead><tr><th>Parámetro</th><th>Defecto</th><th>Efecto</th></tr></thead>
-<tbody>
-<tr><td><code>exportar_dataset_final</code></td><td><code>true</code></td>
-    <td>En <code>false</code>, se omite esta exportación (el Excel se genera igual)</td></tr>
-<tr><td><code>ruta_dataset_final</code></td><td><code>""</code></td>
-    <td>Vacío ⟶ se <strong>deriva</strong> junto a <code>ruta_salida_excel</code>
-        como <code>&lt;mismo_nombre&gt;_dataset_final.&lt;formato&gt;</code></td></tr>
-<tr><td><code>formato_dataset_final</code></td><td><code>"csv"</code></td>
-    <td><code>"csv"</code> o <code>"parquet"</code></td></tr>
-</tbody>
-</table>
-</div>
-
-<div class="callout why">
-<strong>Por qué la ruta se deriva junto al Excel por defecto</strong>
-Ambos artefactos —bitácora y dataset— pertenecen a la <em>misma corrida</em>. Al
-compartir directorio y nombre base, queda inmediatamente visible a qué bitácora
-corresponde cada dataset exportado, sin depender de que el usuario recuerde
-mantenerlos sincronizados manualmente.
-</div>
+<p>Guías: <a href="exclusiones_manuales.html">columnas manuales</a> y <a href="configuracion_centralizada.html">configuración central</a>. Documentación revisada el 2026-10-04. KDE apagado; configure context_vars y behavior_vars en config.yaml. Auditoría final: 115 pruebas aprobadas; <a href="feature_engineering_anomalias.html">correcciones y cobertura KDE</a>. <a href="auditoria_final.html">Tres iteraciones: matemáticas, código y estructura</a>.</p>
 </section>
 
 <!-- ================================================================= -->
@@ -3072,13 +3037,14 @@ comparación vuelve a ser honesta.</p>
 
 <div class="tablewrap">
 <table>
+<caption>Resultados históricos previos a la corrección Monte Carlo +1; no reejecutados en esta auditoría.</caption>
 <thead><tr><th>Experimento (n=2000, k=10)</th><th>Antes (grafo compartido)</th><th>Después (leave-one-out)</th></tr></thead>
 <tbody>
 <tr><td>10 columnas de ruido puro — score real</td><td>0.25 – 0.28</td><td>0.98 – 1.01</td></tr>
 <tr><td>10 columnas de ruido puro — piso de ruido</td><td>~0.99 (peor que TODO score real)</td><td>~0.99 (consistente con el score real)</td></tr>
-<tr><td>Ruido puro correctamente NO excluido</td><td>0 de 10</td><td>9 de 10 <span class="note">(1 falso positivo, tasa esperable a alpha=0.05)</span></td></tr>
+<tr><td>Ruido puro sin evidencia de estructura (correctamente excluido)</td><td>0 de 10</td><td>9 de 10 <span class="note">(1 falso positivo, tasa esperable a alpha=0.05)</span></td></tr>
 <tr><td>2 señales de cluster inyectadas — score real</td><td>—</td><td>0.197 – 0.207</td></tr>
-<tr><td>Señales reales correctamente detectadas</td><td>—</td><td>2 de 2 (p=0.000)</td></tr>
+<tr><td>Señales reales correctamente detectadas</td><td>—</td><td>2 de 2 (p=0.000 con el estimador histórico; el actual no devuelve cero)</td></tr>
 </tbody>
 </table>
 </div>
@@ -3268,7 +3234,7 @@ fondo.</p>
 <tbody>
 <tr><td><code>laplacian_k_vecinos</code></td><td>10</td><td>Vecinos del grafo k-NN. Más vecinos suaviza el grafo; menos lo hace más sensible a ruido local.</td></tr>
 <tr><td><code>laplacian_max_filas</code></td><td>20.000</td><td>Submuestreo del grafo en paneles grandes (mismo patrón que <code>boruta_max_filas</code>).</td></tr>
-<tr><td><code>laplacian_n_permutaciones</code></td><td>200</td><td>Resolución del p-valor = 1/n. Con 20 (valor inicial descartado tras validar), solo se podía rechazar si TODAS las permutaciones eran peores que el real — un criterio inviablemente estricto.</td></tr>
+<tr><td><code>laplacian_n_permutaciones</code></td><td>200</td><td>Monte Carlo: p = (1 + conteo de permutaciones con score ≤ observado)/(n+1). Resolución y p mínimo = 1/(n+1); con 200, 1/201. Para p &lt; alpha efectivo, se requieren suficientes permutaciones.</td></tr>
 <tr><td><code>alpha_ruido_laplaciano</code></td><td>0.05</td><td>Significancia del contraste contra el azar.</td></tr>
 <tr><td><code>bonferroni_ruido_laplaciano</code></td><td>false</td><td>Corrige alpha por el número de variables evaluadas. Si se activa con muchas variables candidatas, subir también <code>laplacian_n_permutaciones</code> (la resolución del p-valor debe ser más fina que el alpha corregido).</td></tr>
 <tr><td><code>peso_laplaciano</code> / <code>peso_dispersion</code></td><td>0.50 / 0.50</td><td>Ponderación del score compuesto (ranking para la fase 3).</td></tr>

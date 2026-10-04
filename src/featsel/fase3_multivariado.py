@@ -4,6 +4,12 @@ fase3_multivariado.py
 
 FASE 3 - Pruebas multivariadas: redundancia y colinealidad.
 
+Data sources / inputs: DataFrame del panel y scores de fase2_bivariado/fase2_no_supervisado.
+Created: 2026-08-26
+Last modified: 2026-10-04
+Changelog:
+- 2026-10-04: reporta VIF infinito y completa desempate por IV/Gini.
+
 Las fases 1 y 2 juzgan cada variable en soledad. Dos variables pueden ser
 excelentes por separado y, aun asi, ser la MISMA informacion. Mantener ambas:
 
@@ -168,12 +174,15 @@ def ejecutar(
         )
         # Desempate exacto: se prefiere el mayor IV y luego el mayor Gini,
         # priorizando la metrica que capta relaciones no monotonas.
-        if np.isfinite(s_gana) and np.isfinite(s_pierde) and np.isclose(s_gana, s_pierde):
-            iv_g = scores.get(gana, {}).get("iv", 0) or 0
-            iv_p = scores.get(pierde, {}).get("iv", 0) or 0
-            if iv_p > iv_g:
+        if np.isfinite(s_gana) and np.isfinite(s_pierde) and s_gana == s_pierde:
+            def desempate(columna):
+                info = scores.get(columna, {})
+                return tuple(info.get(m, -np.inf) if pd.notna(info.get(m, np.nan)) else -np.inf
+                             for m in ("iv", "gini"))
+
+            if desempate(pierde) > desempate(gana):
                 gana, pierde = pierde, gana
-            criterio += f" (empate en score; desempate por IV: {gana})"
+            criterio += f" (empate en score; desempate por IV/Gini: {gana})"
 
         excluidas[pierde] = (
             f"asociacion {p['asociacion']:.4f} > {cfg.umbral_correlacion} con '{gana}' "
@@ -244,7 +253,7 @@ def ejecutar(
             "gini": info.get("gini", np.nan),
             "score_compuesto": info.get("score_compuesto", np.nan),
             "vif": vif_col,
-            "flg_vif_alto": int(np.isfinite(vif_col) and vif_col > cfg.umbral_vif),
+            "flg_vif_alto": int(pd.notna(vif_col) and vif_col > cfg.umbral_vif),
             "flg_exclusion_multivariada": int(excluida),
             "flg_seleccion_final": int(not excluida),
             "variable_que_la_desplaza": ganadores.get(col, ""),

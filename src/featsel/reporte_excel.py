@@ -28,8 +28,9 @@ Metadata
 --------
 Data sources / inputs: diccionario de resultados de ``featsel.pipeline``.
 Created: 2026-07-26
-Last modified: 2026-10-01
+Last modified: 2026-10-02
 Changelog:
+- 2026-10-02: documenta los roles de conservacion y exclusion total.
 - 2026-10-01: se agregaron hojas auditables para FE, estabilidad, ablacion y
   el esquema time-safe de la matriz Isolation Forest/VAE.
 """
@@ -257,7 +258,7 @@ def construir_diccionario() -> pd.DataFrame:
     """
     d = [
         # --- Diagnostico ---------------------------------------------------
-        ("01_Diagnostico_Inicial", "rol", "Papel de la columna: TARGET, ID_ENTIDAD, TIEMPO, CONTEXTO_FE, EXCLUIDA_MANUAL o CANDIDATA."),
+        ("01_Diagnostico_Inicial", "rol", "Papel de la columna: TARGET, ID_ENTIDAD, TIEMPO, CONTEXTO_FE, CONSERVADA_MANUAL, EXCLUIDA_TOTAL o CANDIDATA."),
         ("01_Diagnostico_Inicial", "tipo_inferido", "Familia detectada: NUMERICA, CATEGORICA, BOOLEANA o FECHA."),
         ("01_Diagnostico_Inicial", "pct_nulos", "Proporcion de valores ausentes sobre el total de filas."),
         ("01_Diagnostico_Inicial", "pct_ceros", "Proporcion de ceros (o cadena vacia en texto)."),

@@ -17,125 +17,70 @@
 </style>
 </head>
 <body><div class="wrap">
-<h1>Feature engineering temporal y KDE para anomalías</h1>
-<div class="subtitle">Integración modular previa a la depuración y feature selection · 2026-10-01</div>
-
+<h1>Feature engineering temporal y KDE</h1>
+<p class="subtitle">Configuración y auditoría · 2026-10-04</p>
+<section><h2>Estado y configuración</h2>
+<p>KDE permanece <strong>apagado</strong>, con nombres generales. Edite únicamente <code>config.yaml</code>; <code>config.py</code> define el esquema y valida los valores.</p>
+<table><tr><th>Parámetro</th><th>Qué ingresar</th></tr>
+<tr><td>entradas.ruta_dataset</td><td>Ruta del panel.</td></tr>
+<tr><td>entradas.columna_id / columna_tiempo / columna_target</td><td>Nombres exactos de los roles. Sin target, se usa el flujo no supervisado.</td></tr>
+<tr><td>feature_engineering.context_vars</td><td>Columnas que definen grupos comparables: edad agrupada, puesto, zona.</td></tr>
+<tr><td>feature_engineering.behavior_vars</td><td>Columnas numéricas cuya rareza quiere medir: conteos, montos, saldos.</td></tr>
+<tr><td>feature_engineering.usar_feature_engineering</td><td>Activar solo después de reemplazar las listas por columnas reales.</td></tr>
+<tr><td>feature_engineering.kernel_type</td><td>gaussian, tophat, epanechnikov, exponential, linear o cosine.</td></tr>
+<tr><td>feature_engineering.reference_mode</td><td>joint: contexto combinado; marginal: cada contexto; joint_and_marginal: ambos.</td></tr></table>
+<p>Precedencia: YAML central → YAML alternativo parcial → flags del CLI. La preparación de puestos agrega el puesto agrupado al contexto si encuentra una fuente; no activa KDE.</p>
+</section>
 <section><h2>Flujo</h2><div class="mermaid">
 flowchart TD
-  A[Cargar y tipificar panel] --> B{Validación entity x month}
-  B -->|válido| C{usar_feature_engineering}
-  B -->|inválido| X[Detener con error trazable]
-  C -->|false| F[Diagnóstico fase 0]
-  C -->|true| D[Features personales causales<br/>lag, diff, rolling, z]
-  D --> E[KDE condicional histórica<br/>joint y/o marginal]
-  E --> F
-  F --> G[Depuración univariada]
-  G --> H[Relevancia supervisada<br/>o no supervisada]
-  H --> I[Redundancia multivariada]
-  I --> J[Variables seleccionadas]
-  J --> K[Imputar, codificar y escalar<br/>ajuste solo en TRAIN]
-  K --> L[Matriz numérica IF / VAE<br/>TRAIN + HOLDOUT]
-  J --> M[Catálogo, estabilidad<br/>y ablación por familia]
+ A[Leer config.yaml y panel] --> B{FE activo}
+ B -->|No| C[Selección habitual]
+ B -->|Sí| D[Validar columnas y parámetros]
+ D --> E[Temporales con historia personal]
+ E --> F[Agrupar por contextos elegidos]
+ F --> G{Historia suficiente}
+ G -->|No| H[Features KDE nulas]
+ G -->|Sí| I[Ajustar KDE con periodos anteriores]
+ I --> J[Calcular rareza por conducta]
+ H --> K[Catálogo y estabilidad]
+ J --> K
+ K --> C
+ C --> L[Excel y dataset final]
+ C --> M{Preparar IF/VAE}
+ M -->|Sí| N[Imputar y escalar con TRAIN]
+ N --> O[Matriz TRAIN y HOLDOUT]
 </div></section>
-
-<section><h2>Resumen</h2>
-<p>La nueva etapa corre después de validar la llave del panel y antes del primer diagnóstico estadístico. Por ello, las features creadas no reciben trato preferencial: entran como candidatas normales y las reglas existentes pueden retirarlas por exceso de nulos, falta de relevancia o redundancia.</p>
-<p>El KDE se usa exclusivamente como generador de variables de rareza. Para una observación del mes <em>t</em>, la referencia contiene solo meses anteriores y el perfil comparable configurado. Cada conducta se procesa por separado.</p>
+<section><h2>Contrato</h2><ul>
+<li>Una fila por entidad y periodo; el pipeline bloquea duplicados. Conductas numéricas, finitas o nulas, y contextos existentes.</li>
+<li>Las columnas elegidas determinan los cálculos. Las ajenas a las listas no alimentan el KDE.</li>
+<li>Lags, diferencias, medias, desviaciones y z personales usan historia desplazada. KDE usa solo periodos anteriores al evaluado.</li>
+<li>El mínimo de historia KDE es min_group_size; sin él, no se usa una población alternativa. Los contextos nulos forman un grupo separado.</li>
+<li>Bandwidth: valor positivo finito, silverman o time_safe_cv. CV usa el último periodo histórico como validación. Ventanas: enteros ≥ 2.</li>
+<li>neglog_density mide densidad KDE; tail_rarity mide rareza empírica bilateral. epsilon limita las rarezas fuera del soporte.</li>
+<li>Las features generadas pasan por selección y pueden descartarse. El catálogo identifica conducta, familia, referencia y cobertura; la estabilidad resume cada periodo.</li>
+<li>IF/VAE usa las seleccionadas y aprende imputación, frecuencia categórica y escalado en TRAIN. No entrena un modelo de anomalías.</li>
+</ul></section>
+<section><h2>Correcciones verificadas</h2><table>
+<tr><th>Fallo reproducido</th><th>Corrección</th></tr>
+<tr><td>Se borraban __orden_original y __ctx__&lt;contexto&gt; del usuario.</td><td>Ordenar por índice interno; contextos en un marco separado.</td></tr>
+<tr><td>Nombres como valor y VALOR sobrescribían features.</td><td>Detectar colisiones tras normalizar nombres antes de calcular.</td></tr>
+<tr><td>Nulos se mezclaban con la categoría literal __MISSING__.</td><td>Codificar categorías; reservar -1 para nulos.</td></tr>
+<tr><td>Infinitos en conductas llegaban al estimador.</td><td>Error de dominio temprano con las columnas afectadas.</td></tr>
+<tr><td>Parámetros NaN/infinito y ventanas fraccionarias pasaban validación.</td><td>Exigir números finitos y ventanas enteras; mensajes de configuración.</td></tr>
+</table></section>
+<section><h2>Pruebas y límites</h2>
+<p><code>py -m pytest -q</code>: <strong>115 aprobadas</strong> el 2026-10-04. La revisión KDE agregó 33 casos; las tres iteraciones posteriores agregaron 24. <a href="auditoria_final.html">Informe final</a>.</p>
+<p>Cobertura nueva: preservación de columnas, colisiones, infinitos, nulos contextuales, columnas elegidas, futuro alterado, índices repetidos y filas desordenadas, seis kernels × tres modos y parámetros inválidos. La suite incluye corridas completas supervisadas y no supervisadas con FE activo.</p>
+<p>Datos sintéticos; no se ejecutó el KDE sobre un dataset real ni se evaluó un modelo IF/VAE. FE sigue apagado por decisión del usuario.</p>
 </section>
-
-<section><h2>Metadata</h2>
-<p><strong>Data sources / inputs:</strong> DataFrame cargado desde <code>ConfigPipeline.ruta_dataset</code>; columnas id/tiempo, <code>context_vars</code> y <code>behavior_vars</code> de <code>config.yaml</code>.</p>
-<p><strong>Outputs:</strong> DataFrame enriquecido, catálogo/estabilidad de features y CSV numérico en <code>ConfigPipeline.ruta_matriz_anomalias_efectiva</code>.</p>
-<p><strong>Created:</strong> 2026-10-01 &nbsp;|&nbsp; <strong>Last modified:</strong> 2026-10-01</p>
-<p><strong>Changelog:</strong></p>
-<ul>
-<li>2026-10-01: implementación inicial time-safe de lags, ventanas personales, KDE conjunta/marginal, catálogo, estabilidad, ablación y matriz IF/VAE.</li>
+<section><h2>Metadatos</h2>
+<p>Data sources / inputs: DataFrame cargado desde <code>ConfigPipeline.ruta_dataset</code>; columnas id/tiempo, <code>context_vars</code> y <code>behavior_vars</code> de <code>config.yaml</code>.</p>
+<p>Outputs: DataFrame enriquecido, catálogo/estabilidad de features y CSV numérico en <code>ConfigPipeline.ruta_matriz_anomalias_efectiva</code>.</p>
+<p>Created: 2026-10-01 · Last modified: 2026-10-04</p>
+<ul><li>2026-10-01: implementación inicial time-safe de lags, ventanas personales, KDE conjunta/marginal, catálogo, estabilidad, ablación y matriz IF/VAE.</li>
 <li>2026-10-01: guía operativa de activación por YAML/CLI, verificaciones y errores esperables.</li>
-</ul>
-</section>
-
-<section><h2>Qué se implementó</h2>
-<table><thead><tr><th>Componente</th><th>Comportamiento</th></tr></thead><tbody>
-<tr><td>Interruptor</td><td><code>usar_feature_engineering</code>; apagado conserva el flujo anterior.</td></tr>
-<tr><td>Contexto</td><td>Por defecto solo define la población comparable (<code>incluir_context_vars_en_seleccion: false</code>) y no entra al detector final.</td></tr>
-<tr><td>Temporales</td><td>Lag 1, diferencia, media, desviación y z-score personal para ventanas configurables; todos desplazados a t-1.</td></tr>
-<tr><td>KDE</td><td><code>-log(densidad)</code> y rareza bilateral empírica por referencia conjunta y/o marginal.</td></tr>
-<tr><td>Bandwidth</td><td><code>time_safe_cv</code> valida en el último periodo histórico y entrena con periodos aún anteriores; Silverman es el fallback.</td></tr>
-<tr><td>Estabilidad</td><td>Cobertura, media, desviación y p95 por feature y periodo.</td></tr>
-<tr><td>Ablación</td><td>Cuenta generación, selección y descarte para familias TEMPORAL y KDE.</td></tr>
-<tr><td>IF/VAE</td><td>Matriz numérica común; categorías por frecuencia e imputación/escalado robusto aprendidos únicamente en TRAIN.</td></tr>
-</tbody></table>
-</section>
-
-<section><h2>Supuestos y decisiones</h2>
-<ul>
-<li>La granularidad es exactamente una fila por entidad y mes; los duplicados siguen siendo bloqueantes.</li>
-<li>Las conductas deben ser numéricas después de la tipificación.</li>
-<li>Un perfil con menos de <code>min_group_size</code> observaciones históricas deja la feature KDE en nulo. No se mezcla silenciosamente con la población global.</li>
-<li>Los nulos iniciales son esperados: representan falta real de historia. La fase univariada decide si su cobertura total basta.</li>
-<li>La matriz preparada no entrena un VAE ni convierte KDE en el modelo final; establece un insumo sin fuga para modelos posteriores.</li>
-</ul>
-</section>
-
-<section><h2>Activación correcta</h2>
-<p><strong>No active solamente el flag con los nombres de ejemplo.</strong> Primero configure columnas que existan en el panel y luego encienda la rama. El orden correcto es el siguiente.</p>
-
-<h3>1. Declare la granularidad y el archivo</h3>
-<pre>entradas:
-  ruta_dataset: "data/mi_panel.csv"
-  columna_id: "customer_id"
-  columna_tiempo: "month"
-  columna_target: "fraud_flag"  # opcional: puede no existir en el archivo</pre>
-
-<h3>2. Declare contexto y conductas reales</h3>
-<pre>feature_engineering:
-  usar_feature_engineering: true
-  context_vars: ["age_group", "job_position"]
-  behavior_vars: ["credit_count", "credit_amount", "account_balance"]
-  incluir_context_vars_en_seleccion: false
-  kernel_type: "gaussian"
-  reference_mode: "joint_and_marginal"
-  min_group_size: 100
-  min_personal_history: 6
-  bandwidth_method: "time_safe_cv"
-  temporal_windows: [3, 6, 12]
-  epsilon: 1.0e-8
-  preparar_modelos_anomalia: true
-  meses_holdout_anomalia: 3</pre>
-<ul>
-<li><code>context_vars</code>: columnas que definen la población comparable; pueden ser categóricas o numéricas discretas.</li>
-<li><code>behavior_vars</code>: medidas mensuales que se evalúan una por una; deben quedar numéricas después de la tipificación.</li>
-<li><code>incluir_context_vars_en_seleccion: false</code>: opción recomendada para que atributos de perfil no lleguen directamente al detector.</li>
-</ul>
-
-<h3>3. Ejecute por una de estas dos vías</h3>
-<p><strong>Activación persistente en YAML</strong> — si ya dejó <code>usar_feature_engineering: true</code>:</p>
-<pre>py run_pipeline.py --config config.yaml</pre>
-<p><strong>Activación solo para una corrida</strong> — deje el interruptor en <code>false</code> y sobrescríbalo por CLI:</p>
-<pre>py run_pipeline.py --config config.yaml --usar-feature-engineering true</pre>
-<p>El flag de CLI solo cambia el interruptor. <code>context_vars</code>, <code>behavior_vars</code> y los demás parámetros continúan leyéndose desde el YAML.</p>
-
-<h3>4. Confirme la activación</h3>
-<ul>
-<li>La barra de progreso debe mostrar <code>FE - Temporales y KDE condicional</code> antes de <code>Fase 0</code>.</li>
-<li>La bitácora debe contener las hojas <code>01e_FE_Catalogo</code>, <code>01f_FE_Estabilidad</code>, <code>01g_FE_Ablacion</code> y <code>01h_Prep_IF_VAE</code>.</li>
-<li>Si <code>preparar_modelos_anomalia: true</code>, se crea el CSV con sufijo <code>_matriz_anomalias.csv</code>.</li>
-</ul>
-
-<h3>Validaciones previas y errores esperables</h3>
-<table><thead><tr><th>Condición</th><th>Resultado</th></tr></thead><tbody>
-<tr><td>Falta una variable configurada</td><td>Se detiene y lista las columnas faltantes.</td></tr>
-<tr><td>Una conducta no es numérica</td><td>Se detiene antes de calcular temporales/KDE.</td></tr>
-<tr><td>La llave entidad × mes está duplicada</td><td>La validación estructural bloquea la corrida.</td></tr>
-<tr><td>Hay pocos datos históricos en un perfil</td><td>La feature KDE queda nula hasta alcanzar <code>min_group_size</code>; no se usa una población global oculta.</td></tr>
-<tr><td>No hay más meses que el holdout configurado</td><td>No se exporta una matriz inválida; se informa que debe reducirse <code>meses_holdout_anomalia</code> o aportar más historia.</td></tr>
-</tbody></table>
-
-<p>También se aceptan los alias <code>id_col</code>, <code>time_col</code>, <code>target_col</code> y <code>random_state</code>. Internamente se normalizan a la configuración canónica del proyecto.</p>
-</section>
-
-<section><h2>Verificación realizada</h2>
-<p class="ok">✓ Compilación completa; ✓ <code>py -m pytest tests/</code> en verde (interruptor apagado, no look-ahead del primer/último mes, matriz sin nulos con TRAIN/HOLDOUT); ✓ regresión end-to-end con FE apagado (resultado idéntico al histórico); ✓ integración end-to-end con FE activado.</p>
-<p>Corrida reproducible contra <code>data/panel_sintetico.csv</code> (6.923 filas) con <code>context_vars=["cat_region","cat_segmento"]</code>, <code>behavior_vars=["var_monto_deuda","var_ingreso_estimado"]</code> y el resto de parámetros por defecto: <strong>34 features generadas</strong> (22 TEMPORAL + 12 KDE) → <strong>14 sobreviven</strong> la selección completa (41.2%) → matriz IF/VAE de 5.765 filas TRAIN / 1.158 HOLDOUT y 21 variables. El recuento exacto depende de cuántas <code>behavior_vars</code>/<code>temporal_windows</code>/<code>context_vars</code> se configuren; esta cifra es reproducible con la configuración indicada, no un valor fijo del módulo. Ver <a href="documentacion.html#fe-anomalias">documentacion.html §7b</a> para la justificación estadística completa de cada decisión de diseño.</p>
-</section>
-</div><script>mermaid.initialize({startOnLoad:true,theme:"dark"});</script></body></html>
+<li>2026-10-02: configuración central, exclusiones manuales y preparación de puestos.</li>
+<li>2026-10-04: protege columnas originales, separa contextos nulos y valida infinitos y colisiones de nombres antes de calcular KDE.</li>
+<li>2026-10-04: config.py valida parámetros KDE finitos y ventanas enteras sin truncar.</li></ul>
+<p>Uso: reemplace las listas en config.yaml, active FE y ejecute <code>py run_pipeline.py --sin-autoinstall</code>. Consulte <a href="configuracion_centralizada.html">configuración</a> y <a href="puestos_colaborador.html">puestos</a>.</p>
+</section></div><script>mermaid.initialize({startOnLoad:true,theme:"dark"});</script></body></html>

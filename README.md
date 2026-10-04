@@ -3,29 +3,95 @@
 <!--
 Data sources / inputs: config.yaml y dataset declarado en entradas.ruta_dataset.
 Created: 2026-07-26
-Last modified: 2026-10-01
-Changelog: 2026-10-01 - FE temporal/KDE opcional, matriz time-safe IF/VAE y
+Last modified: 2026-10-04
+Changelog: 2026-10-02 - Preparación de puestos, contexto KDE y fallbacks de encoding.
+2026-10-01 - FE temporal/KDE opcional, matriz time-safe IF/VAE y
 guía paso a paso para activar correctamente la rama.
+2026-10-02 - Exclusiones manuales conservadas al final del dataset final.
+2026-10-02 - Valores centralizados en config.yaml y arranque desde esa fuente.
+2026-10-04 - Auditoria adversaria KDE, validaciones y comentarios directos.
+2026-10-04 - Tres iteraciones: fundamentos, codigo y estructura; VIF y Monte Carlo corregidos.
 -->
 
 Pipeline modular, reproducible y auditable de selección de variables sobre datos
 de panel (entidad × tiempo). Ejecuta validaciones **univariadas**, **bivariadas**,
 **multivariadas** y una prueba **opcional** con **Boruta / BorutaShap**, deja
 toda la evidencia en un único Excel de bitácora, y exporta además un
-**dataset listo para modelar** con solo las variables seleccionadas.
+**dataset final** con las variables seleccionadas y las columnas conservadas al final.
 
 Si el dataset **no tiene columna target**, el pipeline no falla: activa
 automáticamente un **flujo no supervisado** (Laplacian Score + dispersión
 robusta, sin Boruta) pensado para alimentar **Isolation Forest** o un
 **autoencoder variacional (VAE)** — ver sección 9.
 
-> **Estado: funcionando y verificado end-to-end**, en ambos flujos.
-> Rama supervisada: 6.923 filas × 31 columnas → **7 variables seleccionadas**
-> de 28 candidatas, ~30 s con Boruta (~4 s sin él).
-> Rama no supervisada (mismo panel, sin target): 28 candidatas → **11
-> seleccionadas**, ~10 s.
+> Validación actual: `py -m pytest -q` → **115 pruebas aprobadas** (2026-10-04).
+> Tres iteraciones de revisión: matemáticas, código y estructura. [Informe final](docs/auditoria_final.html).
+> Los ejemplos de resultados del demo son históricos y dependen de la configuración.
 
 ---
+
+## Columnas manuales
+
+Las dos listas están juntas en el bloque `entradas` de `config.yaml`:
+
+```yaml
+columnas_conservadas: []  # no analizar; conservar al final del dataset
+columnas_excluidas: []   # no analizar ni exportar
+```
+
+Una columna no puede estar en ambas listas, ni ser id, tiempo o target.
+
+## Puesto del colaborador
+
+La preparación está activada por defecto. Si encuentra ambas columnas, usa
+`despuestocolaborador` y retira `desposicioncolaborador`; si encuentra solo una,
+usa esa. Crea **`despuestocolaboradoragrupado`** y conserva la fuente elegida y
+el agrupado al final del dataset, sin evaluarlos como candidatos.
+
+Normaliza mayúsculas, tildes, espacios y signos. Intenta reparar mojibake
+reversible como `TÃ©cnico`; no puede recuperar con certeza letras ya perdidas.
+Usa las dos primeras palabras limpias para reconocer familia/calificador:
+
+| Entrada | Grupo |
+|---|---|
+| `GERENTE`, `GTE`, `Gte`, `GERENTE DE` | `GERENTE` |
+| `gerente adjunto`, `GTEADJ`, `GTE.ADJ` | `GERENTE ADJUNTO` |
+| `asistente de operaciones`, `ASIST` | `ASISTENTE` |
+| `analista senior`, `ANL SR` | `ANALISTA SENIOR` |
+| `vendedor tienda` | `VENDEDOR` |
+| Vacío, nulo, solo signos o números | `SIN INFORMACION` |
+
+El agrupado sustituye los nombres de las columnas fuente en `context_vars` y
+se agrega si no estaban configurados. Los demás contextos se mantienen; el
+placeholder `job_position` se retira si no existe. KDE utiliza este contexto
+**solo cuando `usar_feature_engineering: true`** y `behavior_vars` está configurado
+con conductas numéricas reales. La preparación no activa FE automáticamente.
+
+Opciones en `puestos_colaborador` de `config.yaml`: interruptor, orden de fuentes,
+nombre de salida y etiqueta sin dato. Las exclusiones completas se aplican antes
+de detectar fuentes. Sin fuente, se omite esta preparación y sigue el flujo
+normal; no se inventan columnas para sustituir otra configuración inválida.
+Ante un error de decoding CSV, se prueban `csv_encodings_fallback` y se registra
+el encoding utilizado. Otros errores de archivo conservan su validación.
+
+Vea las [reglas y el diagrama](docs/puestos_colaborador.html).
+
+## Configuración central
+
+Modifique las variables, rutas y umbrales únicamente en `config.yaml`.
+`src/featsel/config.py` conserva el esquema y las validaciones, sin duplicar valores.
+Tanto `ConfigPipeline()` como el pipeline y el generador leen ese mismo YAML.
+Los flags sobrescriben valores para una corrida; `--config otro.yaml` permite un
+YAML parcial que hereda las opciones restantes del archivo central.
+La ruta del YAML central se resuelve desde el proyecto, incluso al ejecutar desde
+otro directorio. Las rutas de datos y salidas siguen siendo relativas al directorio
+de ejecución. Si falta el YAML central o contiene claves repetidas, se informa un error.
+
+PyYAML debe estar disponible antes del arranque (`py -m pip install PyYAML`);
+las demás dependencias se verifican/instalan según `autoinstalar_dependencias`.
+`--sin-autoinstall` desactiva esa instalación para la corrida.
+
+Vea la [guía de configuración](docs/configuracion_centralizada.html).
 
 ## 1. Arranque rápido
 
@@ -33,80 +99,40 @@ robusta, sin Boruta) pensado para alimentar **Isolation Forest** o un
 py run_pipeline.py
 ```
 
-### Activación correcta de la rama de feature engineering
+### Dónde ingresar los nombres de columnas
 
-El interruptor está apagado por defecto. **No basta con activar el flag** si
-`context_vars` y `behavior_vars` todavía contienen los nombres de ejemplo:
-primero deben reemplazarse por columnas que realmente existan en el dataset.
+Edite solo `config.yaml`. El KDE queda **apagado** y conserva nombres de ejemplo.
 
-1. Configure las columnas de rol y la ruta del panel:
+| Parámetro | Qué ingresar |
+|---|---|
+| `entradas.ruta_dataset` | Ruta de su panel |
+| `entradas.columna_id` | Identificador de entidad |
+| `entradas.columna_tiempo` | Periodo del panel |
+| `entradas.columna_target` | Target; si no existe, usa selección no supervisada |
+| `entradas.columnas_conservadas` | Columnas para conservar sin analizar |
+| `entradas.columnas_excluidas` | Columnas para retirar por completo |
+| `feature_engineering.context_vars` | Columnas de grupos comparables: edad agrupada, puesto, zona |
+| `feature_engineering.behavior_vars` | Columnas numéricas cuya rareza quiere medir: conteos, montos, saldos |
+| `puestos_colaborador.columnas_puesto_prioridad` | Fuentes opcionales para agrupar puestos |
 
-   ```yaml
-   entradas:
-     ruta_dataset: "data/mi_panel.csv"
-     columna_id: "customer_id"
-     columna_tiempo: "month"
-     columna_target: "fraud_flag"  # puede no existir: activa el flujo sin target
-   ```
+Después de reemplazar las listas por columnas reales, active
+`feature_engineering.usar_feature_engineering: true`. `kernel_type` elige el
+kernel; no contiene nombres de columnas. La preparación de puestos agrega el
+puesto agrupado al contexto cuando encuentra una fuente.
 
-2. Configure el perfil de comparación y las conductas mensuales. Las
-   `behavior_vars` deben ser numéricas después de la tipificación:
+Cada conducta genera features temporales y KDE con historia de periodos anteriores.
+`joint` usa el contexto combinado; `marginal`, cada contexto por separado;
+`joint_and_marginal`, ambos. Sin historia suficiente, produce nulos.
+Las features pasan por la selección estadística y pueden descartarse.
 
-   ```yaml
-   feature_engineering:
-     usar_feature_engineering: true
-     context_vars: ["age_group", "job_position"]
-     behavior_vars: ["credit_count", "credit_amount", "account_balance"]
-     incluir_context_vars_en_seleccion: false
-     kernel_type: "gaussian"
-     reference_mode: "joint_and_marginal"
-     min_group_size: 100
-     min_personal_history: 6
-     bandwidth_method: "time_safe_cv"
-     epsilon: 1.0e-8
-     meses_holdout_anomalia: 3
-   ```
-
-3. Ejecute el pipeline normalmente:
-
-   ```powershell
-   py run_pipeline.py --config config.yaml
-   ```
-
-   Como alternativa, deje `usar_feature_engineering: false` en el YAML y
-   active únicamente esa corrida por CLI. Las listas de contexto y conducta
-   se siguen leyendo del YAML:
-
-   ```powershell
-   py run_pipeline.py --config config.yaml --usar-feature-engineering true
-   ```
-
-Antes de generar variables, el pipeline exige una llave `id × month` única,
-columnas contextuales existentes, conductas numéricas y más periodos que
-`meses_holdout_anomalia`. Si algo no coincide, se detiene con un mensaje
-explícito; no sustituye silenciosamente columnas ni poblaciones de referencia.
-
-Al activarse, cada conducta produce lags/cambios/ventanas personales y rareza
-por KDE frente a perfiles contextuales conjuntos y/o marginales. Solo se usa
-historia anterior al mes evaluado. Todas las columnas generadas ingresan luego
-a las fases normales de depuración y pueden ser descartadas si no aportan.
-
-La misma corrida crea:
-
-- hojas `01e`–`01h` en la bitácora con catálogo, estabilidad mensual, ablación
-  por familia y parámetros de preprocesamiento;
-- `<bitacora>_matriz_anomalias.csv`, numérica y sin nulos, con `TRAIN/HOLDOUT`
-  temporal. Imputación, frequency encoding y escalado robusto se aprenden solo
-  sobre `TRAIN`, por lo que sirve como contrato común para Isolation Forest/VAE.
-
-Para compatibilidad con configuraciones en inglés también se aceptan los alias
-`id_col`, `time_col`, `target_col` y `random_state`; internamente se normalizan
-a la única configuración canónica del proyecto.
+El catálogo y la estabilidad se exportan al Excel. Si está habilitada la preparación
+IF/VAE, la matriz usa imputación y escalado aprendidos en TRAIN.
+Vea [la guía de KDE y sus pruebas](docs/feature_engineering_anomalias.html).
 
 Eso es todo. En la primera ejecución el proyecto:
 
 1. verifica e **instala automáticamente** las dependencias que falten,
-2. genera un **panel sintético de demostración** si no encuentra el dataset,
+2. genera un **panel sintético de demostración** si falta el dataset y la carpeta de datos está vacía,
 3. ejecuta las cuatro fases,
 4. escribe `outputs/bitacora_feature_selection.xlsx`.
 
@@ -152,7 +178,7 @@ entradas:
 Verificado con una corrida completa sobre el mismo dataset renombrado: no hay
 que tocar una sola línea de código.
 
-**Precedencia:** valores por defecto del código < `config.yaml` < flags del CLI.
+**Precedencia:** `config.yaml` central < YAML alternativo parcial < flags del CLI.
 
 ---
 
@@ -362,18 +388,20 @@ columna de texto con la razón exacta y los valores que la motivaron.
 Además del Excel de bitácora, el pipeline exporta **un dataset** con:
 
 ```
-id_entidad | periodo | target | <solo las variables que superaron las 3 fases>
+id_entidad | periodo | target | <seleccionadas> | <columnas_conservadas>
 ```
 
-Es decir: las columnas de rol (`columna_id`, `columna_tiempo`, `columna_target`,
-en ese orden) más **únicamente** las variables que sobrevivieron las fases 1, 2
-y 3. Ninguna variable descartada aparece en este archivo — esa trazabilidad ya
-vive en `06b_Descartadas` de la bitácora; mezclarla aquí contaminaría el insumo
-directo del modelo.
+Las columnas de rol van primero (id, tiempo y target si existe), seguidas de
+las variables que superaron las fases 1, 2 y 3. Al final se agregan las columnas
+presentes de `columnas_conservadas`, en el orden de esa lista, sin duplicados.
+Estas columnas no participan en la selección y conservan sus valores y tipos
+cargados. Se exportan incluso si ninguna candidata supera las fases.
+Las variables descartadas por criterios estadísticos quedan fuera del dataset.
 
-En la corrida de referencia: 6.923 filas × **11 columnas** (3 de rol + 8
-seleccionadas), guardado como
-`outputs/bitacora_feature_selection_dataset_final.csv`.
+Las columnas de `columnas_excluidas` se retiran antes del análisis y no se
+exportan. Si no hay seleccionadas ni conservadas presentes, se omite el archivo.
+La matriz especializada IF/VAE utiliza las seleccionadas, sin agregar las
+columnas transportadas manualmente.
 
 ### Configuración
 
@@ -418,9 +446,8 @@ números reales en `docs/documentacion.html` §19.3). Boruta no corre en este
 modo: no hay target contra el que entrenar su Random Forest de contraste.
 
 En la carpeta `data/` de este proyecto hay un ejemplo real: `panel_sin_target.csv`
-es el mismo panel sintético sin la columna `target`, con su bitácora generada
-en `outputs/bitacora_no_supervisada.xlsx` (28 candidatas → 23 → 18 → **14
-seleccionadas**, ~8 segundos).
+es un ejemplo de panel sin etiqueta. Los conteos de selección dependen de
+la configuración y deben comprobarse en la bitácora de cada ejecución.
 
 Ver `docs/documentacion.html` §19 para la justificación teórica completa
 (por qué Laplacian Score y no otra técnica, por qué la redundancia importa más
@@ -430,6 +457,10 @@ la literatura consideradas y descartadas), con las fuentes citadas.
 ---
 
 ## 10. Instalación automática de dependencias
+
+PyYAML debe estar instalado antes de leer la configuración. El orden es
+configuración → logging → bootstrap → pipeline. La instalación del resto se
+controla con `autoinstalar_dependencias` o `--sin-autoinstall`.
 
 `src/featsel/bootstrap.py` usa **solo la librería estándar** (no puede importar
 pandas: pandas podría ser justo lo que falta). Por cada dependencia:

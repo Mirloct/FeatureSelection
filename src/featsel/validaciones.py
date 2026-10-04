@@ -4,6 +4,12 @@ validaciones.py
 
 Validaciones de INTEGRIDAD del panel, previas a cualquier calculo de metricas.
 
+Data sources / inputs: dataset de cfg.ruta_dataset y config.yaml.
+Created: 2026-08-26
+Last modified: 2026-10-02
+Changelog:
+- 2026-10-02: columnas_conservadas se validan como apartadas del analisis.
+
 Se comprueba, en este orden:
 
 1. Que existan las columnas declaradas como id y tiempo (SIEMPRE obligatorias).
@@ -135,7 +141,7 @@ def validar_panel(df: pd.DataFrame, cfg: ConfigPipeline) -> ReporteValidacion:
         )
 
     # Exclusiones manuales inexistentes: no es bloqueante, pero hay que avisar.
-    exc_inexistentes = [c for c in cfg.columnas_excluidas if c not in df.columns]
+    exc_inexistentes = [c for c in cfg.columnas_conservadas if c not in df.columns]
     if exc_inexistentes:
         rep.agregar(
             "Columnas excluidas manualmente", "ADVERTENCIA",

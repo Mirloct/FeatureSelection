@@ -4,6 +4,13 @@ io_utils.py
 
 Entrada/salida de datos: carga del dataset de panel y tipificacion de columnas.
 
+Data sources / inputs: dataset de cfg.ruta_dataset; opciones de config.yaml.
+Created: 2026-08-26
+Last modified: 2026-10-02
+Changelog:
+- 2026-10-02: fallbacks de encoding CSV configurables, solo ante UnicodeDecodeError.
+- 2026-10-02: las columnas excluidas manualmente conservan sus valores y tipos.
+
 Responsabilidad unica: dejar en memoria un ``DataFrame`` limpio de tipos y una
 clasificacion explicita de cada columna (numerica / categorica / temporal /
 booleana). Ninguna decision de seleccion se toma aqui.
@@ -49,7 +56,18 @@ def cargar_dataset(cfg: ConfigPipeline) -> pd.DataFrame:
 
     try:
         if sufijo in (".csv", ".txt"):
-            df = pd.read_csv(ruta, sep=cfg.csv_sep, encoding=cfg.csv_encoding, low_memory=False)
+            encodings = list(dict.fromkeys([cfg.csv_encoding, *cfg.csv_encodings_fallback]))
+            for posicion, encoding in enumerate(encodings):
+                try:
+                    df = pd.read_csv(ruta, sep=cfg.csv_sep, encoding=encoding, low_memory=False)
+                    if posicion:
+                        LOGGER.warning("CSV leido con encoding alternativo '%s' en lugar de '%s'.",
+                                       encoding, cfg.csv_encoding)
+                    break
+                except UnicodeDecodeError:
+                    if posicion == len(encodings) - 1:
+                        raise
+                    LOGGER.warning("CSV: fallo decoding '%s'; se intenta el siguiente encoding.", encoding)
         elif sufijo == ".parquet":
             df = pd.read_parquet(ruta)
         elif sufijo == ".feather":
@@ -125,7 +143,8 @@ def tipificar_dataset(
         tipo = inferir_tipo(df[col])
 
         # Texto que en realidad es numero -> se convierte y se documenta.
-        if tipo == "NUMERICA" and not pd.api.types.is_numeric_dtype(df[col]):
+        if (col not in cfg.columnas_conservadas and tipo == "NUMERICA"
+                and not pd.api.types.is_numeric_dtype(df[col])):
             df[col] = pd.to_numeric(df[col], errors="coerce")
             conversiones.append(f"{col}: texto -> numerico")
 

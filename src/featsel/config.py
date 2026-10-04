@@ -8,34 +8,35 @@ Metadata
 --------
 Data sources / inputs: ``config.yaml`` y overrides de ``run_pipeline.py``.
 Created: 2026-07-26
-Last modified: 2026-10-01
+Last modified: 2026-10-04
 Changelog:
+- 2026-10-02: opciones centralizadas y validacion de agrupacion de puestos.
+- 2026-10-02: separa columnas conservadas sin evaluar y excluidas totalmente.
+- 2026-10-02: documenta exclusiones manuales como columnas conservadas al final.
 - 2026-10-01: se centralizo la configuracion de feature engineering temporal,
   KDE condicional y preparacion time-safe para Isolation Forest/VAE.
 
-Los nombres de las columnas de rol (`columna_target`, `columna_id`,
-`columna_tiempo`) viven UNICAMENTE aqui / en `config.yaml`. Ningun otro modulo
-del proyecto escribe literales como "target" o "periodo": todos reciben el
-objeto :class:`ConfigPipeline` y leen `cfg.columna_target`, `cfg.columna_id`,
-`cfg.columna_tiempo`. Cambiar el nombre en `config.yaml` (o por CLI) es
-suficiente para que TODO el pipeline —incluido el generador de datos de
-demostracion y el reporte Excel— se adapte solo.
+- 2026-10-02: valores por defecto exclusivamente en config.yaml; carga estricta
+  y construccion directa desde la misma fuente, sin defaults duplicados.
+- 2026-10-04: valida parametros KDE finitos y ventanas enteras sin truncar.
+- 2026-10-04: comentarios de resolucion Monte Carlo con correccion +1.
 
-Precedencia de configuracion (de menor a mayor prioridad):
-
-    defaults del dataclass  <  config.yaml  <  argumentos de linea de comandos
+Edite nombres de columnas, rutas y valores en config.yaml.
+Precedencia: YAML central < YAML alternativo < flags del CLI.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field, fields
+import math
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
 from .logging_utils import obtener_logger
 
 LOGGER = obtener_logger("config")
+CONFIG_PREDETERMINADA = Path(__file__).resolve().parents[2] / "config.yaml"
 
 
 # ---------------------------------------------------------------------------
@@ -45,10 +46,25 @@ class ErrorConfiguracion(ValueError):
     """Se lanza cuando la configuracion es invalida o inconsistente."""
 
 
+def _positivo_finito(valor: Any) -> bool:
+    """Valida numeros configurados sin propagar errores de conversion."""
+    try:
+        return not isinstance(valor, bool) and math.isfinite(float(valor)) and float(valor) > 0
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
+def _ventana_valida(valor: Any) -> bool:
+    try:
+        return _positivo_finito(valor) and float(valor) >= 2 and float(valor).is_integer()
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Configuracion
 # ---------------------------------------------------------------------------
-@dataclass
+@dataclass(init=False)
 class ConfigPipeline:
     """Parametros completos del pipeline de seleccion de variables.
 
@@ -60,26 +76,29 @@ class ConfigPipeline:
     # =====================================================================
     # BLOQUE A. Entradas obligatorias del proceso
     # =====================================================================
-    ruta_dataset: str = "data/panel_sintetico.csv"
-    columna_target: str = "target"
-    columna_id: str = "id_entidad"
-    columna_tiempo: str = "periodo"
-    usar_boruta: bool = False
-    ruta_salida_excel: str = "outputs/bitacora_feature_selection.xlsx"
+    ruta_dataset: str
+    columna_target: str
+    columna_id: str
+    columna_tiempo: str
+    usar_boruta: bool
+    ruta_salida_excel: str
 
-    #: Columnas adicionales que deben excluirse de la evaluacion sin analizarlas
+    #: Columnas adicionales sin evaluar, conservadas al final del dataset exportado
     #: (identificadores secundarios, campos de auditoria, llaves foraneas...).
-    columnas_excluidas: list[str] = field(default_factory=list)
+    columnas_conservadas: list[str]
+    #: Columnas eliminadas antes del analisis; no se exportan.
+    columnas_excluidas: list[str]
 
     #: Si True, ademas del Excel de bitacora se exporta un dataset "listo para
-    #: modelar": id + tiempo + target + solo las variables que superaron las
+    #: modelar": id + tiempo + target + seleccionadas + exclusiones manuales.
+    #: Las seleccionadas son las variables que superaron las
     #: tres fases obligatorias (univariada, bivariada y multivariada).
-    exportar_dataset_final: bool = True
+    exportar_dataset_final: bool
     #: Ruta del dataset final. Si se deja vacio, se deriva automaticamente junto
     #: a `ruta_salida_excel` como "<mismo_nombre>_dataset_final.<formato>".
-    ruta_dataset_final: str = ""
+    ruta_dataset_final: str
     #: Formato de escritura del dataset final: "csv" | "parquet".
-    formato_dataset_final: str = "csv"
+    formato_dataset_final: str
 
     # =====================================================================
     # BLOQUE B. Fase 1 - Univariado
@@ -88,20 +107,20 @@ class ConfigPipeline:
     #: 0.95 = la variable es constante en el 95% de las filas: aporta senal
     #: solo en <=5% de la muestra y en panel eso suele ser ruido de un puñado
     #: de entidades.
-    umbral_ceros_nulos: float = 0.95
+    umbral_ceros_nulos: float
     #: Umbral ALTERNO, mas conservador. Se activa con `usar_umbral_alterno`.
-    umbral_ceros_nulos_alterno: float = 0.90
-    usar_umbral_alterno: bool = False
+    umbral_ceros_nulos_alterno: float
+    usar_umbral_alterno: bool
 
     #: Desviacion estandar por debajo de la cual se considera constante.
-    umbral_std_minimo: float = 1e-8
+    umbral_std_minimo: float
     #: Coeficiente de variacion (std/|media|) minimo. Mide dispersion RELATIVA:
     #: una std de 0.01 es despreciable si la media es 1e6, pero enorme si la
     #: media es 0.001. Por eso no basta con mirar la std absoluta.
-    umbral_cv_minimo: float = 1e-4
+    umbral_cv_minimo: float
     #: Proporcion maxima admisible del valor/categoria mas frecuente.
     #: >= 0.99 -> una sola categoria domina y la variable es casi constante.
-    umbral_dominancia: float = 0.99
+    umbral_dominancia: float
     #: Zona gris de dominancia, SOLO para CATEGORICAS: aviso (no elimina)
     #: cuando la categoria mas frecuente cubre entre este umbral y
     #: `umbral_dominancia`. Una categoria que concentra ~90% de la masa no es
@@ -109,7 +128,7 @@ class ConfigPipeline:
     #: a la clase minoritaria con muy pocas observaciones: el modelo puede
     #: sesgarse hacia la clase dominante o sobreajustar la minoritaria. Debe
     #: ser < `umbral_dominancia`.
-    umbral_dominancia_aviso: float = 0.90
+    umbral_dominancia_aviso: float
     #: Cantidad de categorias distintas por encima de la cual una CATEGORICA
     #: se marca como de "cardinalidad alta" (aviso, no elimina): el one-hot
     #: deja de ser practico (explosion dimensional, columnas casi vacias) y
@@ -120,11 +139,11 @@ class ConfigPipeline:
     #: `max_categorias` a proposito: avisa antes de que el agrupamiento entre
     #: a actuar, para que la decision de fondo (¿esta variable es realmente
     #: util con esta granularidad?) se tome con informacion, no en silencio.
-    umbral_alta_cardinalidad: int = 20
+    umbral_alta_cardinalidad: int
     #: IQR (p75-p25) por debajo del cual se marca "percentiles comprimidos".
-    umbral_iqr_minimo: float = 0.0
+    umbral_iqr_minimo: float
     #: Numero minimo de valores unicos para considerar evaluable una variable.
-    minimo_valores_unicos: int = 2
+    minimo_valores_unicos: int
 
     # =====================================================================
     # BLOQUE B2. Fase 1B - Agrupacion de categoricas por similitud de nombre
@@ -136,186 +155,185 @@ class ConfigPipeline:
     # one-hot util. Ver `fase1b_agrupacion_categorica.py` y
     # `metricas.agrupar_categoria_por_similitud_nombre`.
     #: Interruptor maestro de la fase.
-    usar_agrupacion_categorica_nombre: bool = True
+    usar_agrupacion_categorica_nombre: bool
     #: Cardinalidad minima para activar el CLUSTERING (accion, no solo aviso).
     #: Deliberadamente mayor que `umbral_alta_cardinalidad` (20, que solo
     #: avisa en la fase 1): ese umbral bajo existe para que se vea el aviso
     #: aunque no se actue; este es el umbral en el que SI se actua.
-    umbral_cardinalidad_clustering: int = 100
+    umbral_cardinalidad_clustering: int
     #: Tope superior del barrido de k explorado por silueta. Se acota ademas
     #: a `n_unicos - 1` por columna (no tiene sentido proponer mas grupos que
     #: categorias menos uno). 30 es un techo generoso frente al piso de
     #: activacion (100 categorias): incluso en el peor caso reduce la
     #: cardinalidad a menos de un tercio.
-    max_k_agrupacion_categorica: int = 30
+    max_k_agrupacion_categorica: int
 
     # =====================================================================
     # BLOQUE C. Fase 2 - Bivariado (IV / Gini)
     # =====================================================================
     #: Numero de bins objetivo para la discretizacion por cuantiles (WOE).
-    n_bins: int = 10
+    n_bins: int
     #: Fraccion minima de la muestra por bin. Bins mas chicos se fusionan:
     #: un bin con 5 observaciones produce un WOE inestable y un IV inflado.
-    min_prop_bin: float = 0.03
+    min_prop_bin: float
     #: Cardinalidad maxima de una categorica; el resto se agrupa en "OTROS".
-    max_categorias: int = 50
+    max_categorias: int
     #: Correccion de continuidad (Haldane-Anscombe) para evitar log(0) en WOE.
-    correccion_woe: float = 0.5
+    correccion_woe: float
 
     #: Pesos del score compuesto. Por defecto balanceado 50/50.
-    peso_gini: float = 0.50
-    peso_iv: float = 0.50
+    peso_gini: float
+    peso_iv: float
     #: Normalizacion previa a la ponderacion: "minmax" | "rank".
-    metodo_normalizacion: str = "minmax"
+    metodo_normalizacion: str
 
     #: Pisos de poder predictivo. Regla de exclusion: se descarta la variable
     #: solo si falla en AMBAS metricas (IV bajo Y Gini bajo), para no penalizar
     #: variables que una de las dos metricas capta mejor.
-    umbral_iv_minimo: float = 0.02
-    umbral_gini_minimo: float = 0.05
+    umbral_iv_minimo: float
+    umbral_gini_minimo: float
     #: Piso opcional sobre el score compuesto normalizado (0 = desactivado).
-    umbral_score_minimo: float = 0.0
+    umbral_score_minimo: float
 
     #: Piso de ruido estadistico. Los umbrales fijos (0.02 / 0.05) no dependen
     #: del tamano de la muestra ni del numero de bins, pero el IV espurio de una
     #: variable aleatoria SI depende de ambos. Con esto activado, el umbral
     #: efectivo es el MAYOR entre el fijo y el piso de ruido calculado.
-    usar_piso_ruido: bool = True
+    usar_piso_ruido: bool
     #: Nivel de significancia del contraste contra la hipotesis de irrelevancia.
-    alpha_ruido: float = 0.01
-    #: Corregir alpha por el numero de variables evaluadas (Bonferroni).
-    #: Mas estricto: reduce falsos positivos a costa de perder senales debiles.
-    bonferroni_ruido: bool = False
-    #: IV por encima del cual se sospecha fuga de informacion (leakage).
-    umbral_iv_sospechoso: float = 0.50
-    #: Si True, las variables con sospecha de fuga se excluyen ademas de marcarse.
-    excluir_sospecha_fuga: bool = False
-    #: Si >0, conserva solo las N mejores por score compuesto.
-    top_n_bivariado: int = 0
+    alpha_ruido: float
+    bonferroni_ruido: bool
+    umbral_iv_sospechoso: float
+    excluir_sospecha_fuga: bool
+    top_n_bivariado: int
+    umbral_psi: float
+    excluir_por_inestabilidad: bool
 
-    #: Estabilidad temporal (especifico de panel): PSI maximo tolerado entre
-    #: el periodo base y el resto. >0.25 = cambio poblacional severo.
-    umbral_psi: float = 0.25
-    #: Si True, la inestabilidad temporal tambien excluye (por defecto solo marca).
-    excluir_por_inestabilidad: bool = False
-
-    # =====================================================================
-    # BLOQUE C2. Fase 2 ALTERNATIVA - Relevancia no supervisada (sin target)
-    # =====================================================================
-    # Se activa automaticamente cuando `columna_target` no existe en el
-    # dataset (ver pipeline.py). Reemplaza el par IV/Gini -que exige target-
-    # por dos medidas que no la necesitan: Laplacian Score (estructura de
-    # vecindad) y dispersion robusta / entropia (potencial de cola pesada).
-    # Ver docs/documentacion.html para la justificacion teorica completa.
-    #: Vecinos del grafo k-NN sobre el que se mide el Laplacian Score.
-    laplacian_k_vecinos: int = 10
-    #: Submuestreo para acotar el costo de construir el grafo (0 = sin limite).
-    laplacian_max_filas: int = 20_000
-    #: Permutaciones para estimar el piso de ruido del Laplacian Score. La
-    #: resolucion del p-valor empirico es 1/n: con 20 permutaciones, la unica
-    #: forma de obtener p<0.05 es que TODAS las permutaciones den un puntaje
-    #: peor que el real, un criterio demasiado exigente que en la practica
-    #: genera falsos negativos por puro ruido de muestreo Monte Carlo (se
-    #: verifico empiricamente: con 20 permutaciones, columnas de ruido puro
-    #: generadas a proposito sobrevivian por azar). 200 permutaciones dan
-    #: resolucion de 0.005, suficiente para alpha=0.05, a un costo
-    #: computacional marginal (el grafo, la parte cara, no se recalcula por
-    #: permutacion).
-    laplacian_n_permutaciones: int = 200
-    #: Significancia del contraste "esta variable supera al ruido de permutacion".
-    alpha_ruido_laplaciano: float = 0.05
-    #: Corregir alpha por el numero de variables evaluadas (Bonferroni), igual
-    #: que `bonferroni_ruido` en la fase bivariada supervisada: se evaluan
-    #: tantos contrastes independientes como variables candidatas, y sin
-    #: correccion se espera ~alpha*n falsos positivos solo por azar.
-    #: OJO: la resolucion del p-valor por permutacion es 1/laplacian_n_permutaciones;
-    #: para que el umbral de Bonferroni (alpha/n_variables) sea resoluble, hace
-    #: falta laplacian_n_permutaciones >> n_variables/alpha. Con muchas variables
-    #: candidatas, subir tambien laplacian_n_permutaciones al activar esto.
-    bonferroni_ruido_laplaciano: bool = False
+    # Rama sin target: Laplacian Score y ranking por dispersion.
+    laplacian_k_vecinos: int
+    laplacian_max_filas: int
+    #: Permutaciones Monte Carlo; p minimo y resolucion = 1/(n+1).
+    laplacian_n_permutaciones: int
+    alpha_ruido_laplaciano: float
+    #: Bonferroni: alpha/n_variables. Requiere 1/(permutaciones+1) < alpha efectivo.
+    bonferroni_ruido_laplaciano: bool
     #: Pesos del score no supervisado compuesto (Laplacian + dispersion/entropia).
-    peso_laplaciano: float = 0.50
-    peso_dispersion: float = 0.50
+    peso_laplaciano: float
+    peso_dispersion: float
     #: Si >0, conserva solo las N mejores por score no supervisado.
-    top_n_no_supervisado: int = 0
+    top_n_no_supervisado: int
 
     # =====================================================================
     # BLOQUE D. Fase 3 - Multivariado
     # =====================================================================
     #: Umbral de asociacion absoluta para declarar redundancia.
-    umbral_correlacion: float = 0.90
+    umbral_correlacion: float
     #: Metodo para pares numerico-numerico: "spearman" | "pearson".
-    metodo_correlacion: str = "spearman"
+    metodo_correlacion: str
     #: VIF por encima del cual se marca multicolinealidad severa.
-    umbral_vif: float = 10.0
+    umbral_vif: float
     #: Si True, ademas de marcar, el VIF elimina iterativamente.
-    excluir_por_vif: bool = False
+    excluir_por_vif: bool
 
     # =====================================================================
     # BLOQUE E. Fase 4 - Boruta (opcional)
     # =====================================================================
     #: "auto" (libreria si existe, si no nativo) | "borutapy" | "borutashap" | "nativo"
-    motor_boruta: str = "auto"
-    boruta_n_estimadores: int = 200
-    boruta_max_iter: int = 60
-    boruta_alpha: float = 0.05
-    boruta_profundidad_max: int = 6
+    motor_boruta: str
+    boruta_n_estimadores: int
+    boruta_max_iter: int
+    boruta_alpha: float
+    boruta_profundidad_max: int
     #: Submuestreo para acotar el costo de Boruta en paneles grandes (0 = sin limite).
-    boruta_max_filas: int = 100_000
+    boruta_max_filas: int
 
     # =====================================================================
     # BLOQUE F. Ejecucion
     # =====================================================================
-    semilla: int = 42
-    n_jobs: int = -1
-    autoinstalar_dependencias: bool = True
-    ruta_log: str = "outputs/featsel.log"
-    nivel_log: str = "INFO"
+    semilla: int
+    n_jobs: int
+    autoinstalar_dependencias: bool
+    ruta_log: str
+    nivel_log: str
     #: Separador y encoding para datasets CSV.
-    csv_sep: str = ","
-    csv_encoding: str = "utf-8"
+    csv_sep: str
+    csv_encoding: str
+    csv_encodings_fallback: list[str]
     #: Si el dataset no existe, generar el panel sintetico de demostracion.
-    generar_demo_si_falta: bool = True
+    generar_demo_si_falta: bool
 
     # =====================================================================
     # BLOQUE G. Feature engineering para anomalias (opcional, pre-depuracion)
     # =====================================================================
     #: Interruptor maestro. Si es False, el pipeline conserva exactamente el
     #: flujo historico y no exige que existan context_vars/behavior_vars.
-    usar_feature_engineering: bool = False
+    usar_feature_engineering: bool
     #: Perfil de comparacion para la KDE. Pueden ser numericas o categoricas;
     #: los valores se tratan como estratos, sin codificacion ordinal.
-    context_vars: list[str] = field(default_factory=list)
+    context_vars: list[str]
     #: Conductas mensuales analizadas individualmente. Deben ser numericas.
-    behavior_vars: list[str] = field(default_factory=list)
+    behavior_vars: list[str]
     #: Por defecto el contexto define pares comparables pero no se entrega al
     #: detector final (evita marcar perfiles demograficos como anomalias).
-    incluir_context_vars_en_seleccion: bool = False
+    incluir_context_vars_en_seleccion: bool
     #: Kernels soportados por sklearn.neighbors.KernelDensity.
-    kernel_type: str = "gaussian"
+    kernel_type: str
     #: "joint", "marginal" o "joint_and_marginal".
-    reference_mode: str = "joint_and_marginal"
+    reference_mode: str
     #: Minimo de observaciones historicas dentro del perfil comparable.
-    min_group_size: int = 100
+    min_group_size: int
     #: Observaciones previas de la entidad requeridas para z-scores personales.
-    min_personal_history: int = 6
+    min_personal_history: int
     #: "time_safe_cv", "silverman" o un ancho numerico positivo.
-    bandwidth_method: str | float = "time_safe_cv"
+    bandwidth_method: str | float
     #: Grilla de bandwidth sobre la escala robusta usada por time_safe_cv.
-    bandwidth_grid: list[float] = field(default_factory=lambda: [0.10, 0.20, 0.35, 0.50, 0.75, 1.00])
+    bandwidth_grid: list[float]
     #: Ventanas (meses/observaciones) para estadisticos personales desplazados.
-    temporal_windows: list[int] = field(default_factory=lambda: [3, 6, 12])
+    temporal_windows: list[int]
     #: Estabilizador de divisiones, densidades y escalas robustas.
-    epsilon: float = 1e-8
+    epsilon: float
     #: Tope determinista de referencias por ajuste KDE (0 = sin tope).
-    kde_max_reference_rows: int = 20_000
+    kde_max_reference_rows: int
 
     # Preparacion comun para Isolation Forest y VAE. La matriz se genera tras
     # la seleccion, con imputacion/codificacion/escalado aprendidos SOLO en el
     # tramo de entrenamiento temporal.
-    preparar_modelos_anomalia: bool = True
-    meses_holdout_anomalia: int = 3
-    ruta_matriz_anomalias: str = ""
+    preparar_modelos_anomalia: bool
+    meses_holdout_anomalia: int
+    ruta_matriz_anomalias: str
+
+    # Preparacion de puestos previa al diagnostico y al contexto KDE.
+    usar_estandarizacion_puesto: bool
+    columnas_puesto_prioridad: list[str]
+    columna_puesto_agrupado: str
+    puesto_sin_dato: str
+
+    def __init__(self, *args: Any, **overrides: Any) -> None:
+        """Lee los valores del YAML central y aplica overrides del consumidor.
+
+        Conserva los argumentos posicionales del dataclass original y crea
+        listas independientes para cada instancia. No almacena defaults en cache.
+        """
+        nombres = [f.name for f in fields(type(self))]
+        if len(args) > len(nombres):
+            raise TypeError("Demasiados argumentos para ConfigPipeline.")
+        posicionales = dict(zip(nombres, args))
+        duplicados = posicionales.keys() & overrides.keys()
+        if duplicados:
+            raise TypeError(f"Argumentos repetidos: {sorted(duplicados)}")
+        desconocidos = overrides.keys() - set(nombres)
+        if desconocidos:
+            raise TypeError(f"Argumentos desconocidos: {sorted(desconocidos)}")
+        datos = _leer_yaml(CONFIG_PREDETERMINADA)
+        faltantes = set(nombres) - datos.keys()
+        if faltantes:
+            raise ErrorConfiguracion(
+                f"Faltan parametros en '{CONFIG_PREDETERMINADA}': {sorted(faltantes)}"
+            )
+        datos.update(posicionales)
+        datos.update(overrides)
+        for nombre in nombres:
+            setattr(self, nombre, datos[nombre])
 
     # ------------------------------------------------------------------
     # Propiedades derivadas
@@ -333,7 +351,7 @@ class ConfigPipeline:
             if self.usar_feature_engineering and not self.incluir_context_vars_en_seleccion
             else []
         )
-        return self.columnas_rol + list(self.columnas_excluidas) + contexto
+        return self.columnas_rol + list(self.columnas_conservadas) + list(self.columnas_excluidas) + contexto
 
     @property
     def umbral_ceros_nulos_efectivo(self) -> float:
@@ -371,7 +389,9 @@ class ConfigPipeline:
         if columna == self.columna_tiempo:
             return "TIEMPO"
         if columna in self.columnas_excluidas:
-            return "EXCLUIDA_MANUAL"
+            return "EXCLUIDA_TOTAL"
+        if columna in self.columnas_conservadas:
+            return "CONSERVADA_MANUAL"
         if (
             self.usar_feature_engineering
             and not self.incluir_context_vars_en_seleccion
@@ -393,6 +413,7 @@ class ConfigPipeline:
             "ruta_dataset": "A. Entradas", "columna_target": "A. Entradas",
             "columna_id": "A. Entradas", "columna_tiempo": "A. Entradas",
             "usar_boruta": "A. Entradas", "ruta_salida_excel": "A. Entradas",
+            "columnas_conservadas": "A. Entradas",
             "columnas_excluidas": "A. Entradas",
             "exportar_dataset_final": "A. Entradas", "ruta_dataset_final": "A. Entradas",
             "formato_dataset_final": "A. Entradas",
@@ -440,9 +461,30 @@ class ConfigPipeline:
                 f"se recibio {roles}."
             )
         # --- ...y no pueden estar en la lista de exclusion manual ----------
-        choque = set(roles) & set(self.columnas_excluidas)
+        choque = set(roles) & (set(self.columnas_conservadas) | set(self.columnas_excluidas))
         if choque:
-            errores.append(f"Columnas de rol listadas tambien en columnas_excluidas: {sorted(choque)}.")
+            errores.append(f"Columnas de rol listadas en conservadas o excluidas: {sorted(choque)}.")
+
+        conflicto = set(self.columnas_conservadas) & set(self.columnas_excluidas)
+        if conflicto:
+            errores.append(f"Columnas presentes en conservadas y excluidas: {sorted(conflicto)}.")
+        conflicto_fe = set(self.columnas_excluidas) & (set(self.context_vars) | set(self.behavior_vars))
+        if self.usar_feature_engineering and conflicto_fe:
+            errores.append(f"Columnas de feature engineering excluidas totalmente: {sorted(conflicto_fe)}.")
+
+        if self.usar_estandarizacion_puesto:
+            if not self.columnas_puesto_prioridad or any(
+                not isinstance(c, str) or not c.strip() for c in self.columnas_puesto_prioridad
+            ):
+                errores.append("columnas_puesto_prioridad debe contener nombres no vacios.")
+            if not isinstance(self.columna_puesto_agrupado, str) or not self.columna_puesto_agrupado.strip():
+                errores.append("columna_puesto_agrupado debe ser un nombre no vacio.")
+            if not isinstance(self.puesto_sin_dato, str) or not self.puesto_sin_dato.strip():
+                errores.append("puesto_sin_dato debe ser una etiqueta no vacia.")
+            if self.columna_puesto_agrupado in set(roles) | set(self.columnas_excluidas) | set(self.behavior_vars):
+                errores.append("El puesto agrupado no puede ser rol, conducta ni columna excluida.")
+            if self.columna_puesto_agrupado in self.columnas_puesto_prioridad:
+                errores.append("El puesto agrupado debe tener un nombre distinto de las fuentes.")
 
         # --- Rangos de proporciones ---------------------------------------
         for nombre in ("umbral_ceros_nulos", "umbral_ceros_nulos_alterno",
@@ -525,25 +567,19 @@ class ConfigPipeline:
             errores.append(f"min_group_size={self.min_group_size} debe ser >= 2.")
         if self.min_personal_history < 2:
             errores.append(f"min_personal_history={self.min_personal_history} debe ser >= 2.")
-        if self.epsilon <= 0:
-            errores.append(f"epsilon={self.epsilon} debe ser > 0.")
+        if not _positivo_finito(self.epsilon):
+            errores.append(f"epsilon={self.epsilon} debe ser finito y > 0.")
         if self.kde_max_reference_rows < 0:
             errores.append("kde_max_reference_rows debe ser >= 0 (0 significa sin limite).")
         if self.meses_holdout_anomalia < 1:
             errores.append("meses_holdout_anomalia debe ser >= 1.")
-        if not self.temporal_windows or any(int(w) < 2 for w in self.temporal_windows):
+        if not self.temporal_windows or any(not _ventana_valida(w) for w in self.temporal_windows):
             errores.append("temporal_windows debe contener enteros >= 2.")
-        if not self.bandwidth_grid or any(float(x) <= 0 for x in self.bandwidth_grid):
-            errores.append("bandwidth_grid debe contener valores positivos.")
-        if isinstance(self.bandwidth_method, str):
-            if self.bandwidth_method not in ("time_safe_cv", "silverman"):
-                try:
-                    if float(self.bandwidth_method) <= 0:
-                        raise ValueError
-                except ValueError:
-                    errores.append("bandwidth_method debe ser time_safe_cv, silverman o un numero positivo.")
-        elif float(self.bandwidth_method) <= 0:
-            errores.append("bandwidth_method numerico debe ser > 0.")
+        if not self.bandwidth_grid or any(not _positivo_finito(x) for x in self.bandwidth_grid):
+            errores.append("bandwidth_grid debe contener valores finitos y positivos.")
+        if (self.bandwidth_method not in ("time_safe_cv", "silverman")
+                and not _positivo_finito(self.bandwidth_method)):
+            errores.append("bandwidth_method debe ser time_safe_cv, silverman o un numero finito positivo.")
 
         # --- Enteros positivos --------------------------------------------
         if self.n_bins < 2:
@@ -596,6 +632,9 @@ class ConfigPipeline:
 
 def _bloque_por_prefijo(nombre: str) -> str:
     """Asigna un bloque legible a cada parametro para la hoja de bitacora."""
+    if nombre in {"usar_estandarizacion_puesto", "columnas_puesto_prioridad",
+                  "columna_puesto_agrupado", "puesto_sin_dato"}:
+        return "A2. Puestos de colaborador"
     if nombre.startswith(("umbral_ceros", "umbral_std", "umbral_cv", "umbral_dominancia",
                           "umbral_iqr", "umbral_alta_cardinalidad", "minimo_valores",
                           "usar_umbral")):
@@ -644,8 +683,8 @@ def cargar_config(
     Parameters
     ----------
     ruta_yaml
-        Ruta al `config.yaml`. Si no existe o PyYAML no esta disponible, se
-        usan los defaults del dataclass y se registra la situacion.
+        YAML alternativo opcional. Completa sus claves con el config.yaml del
+        proyecto. Un archivo ausente o invalido provoca ErrorConfiguracion.
     overrides
         Valores de mayor prioridad (tipicamente los flags del CLI). Las claves
         con valor ``None`` se ignoran para no pisar el YAML con "no informado".
@@ -654,20 +693,9 @@ def cargar_config(
 
     if ruta_yaml is not None:
         ruta_yaml = Path(ruta_yaml)
-        if ruta_yaml.is_file():
-            try:
-                import yaml  # import diferido: puede haberse instalado en bootstrap
-
-                with ruta_yaml.open("r", encoding="utf-8") as fh:
-                    crudo = yaml.safe_load(fh) or {}
-                datos = _aplanar_yaml(crudo)
-                LOGGER.info("Configuracion leida desde %s (%d parametros).", ruta_yaml, len(datos))
-            except ImportError:
-                LOGGER.warning("PyYAML no disponible; se usan los valores por defecto del codigo.")
-            except Exception as exc:  # noqa: BLE001
-                raise ErrorConfiguracion(f"No se pudo leer '{ruta_yaml}': {exc}") from exc
-        else:
-            LOGGER.warning("No se encontro '%s'; se usan los valores por defecto.", ruta_yaml)
+        # La base se lee en ConfigPipeline; un YAML alternativo puede ser parcial.
+        if ruta_yaml.resolve() != CONFIG_PREDETERMINADA.resolve():
+            datos = _leer_yaml(ruta_yaml)
 
     if overrides:
         limpios = {k: v for k, v in overrides.items() if v is not None}
@@ -706,16 +734,34 @@ def cargar_config(
     return cfg
 
 
-def _aplanar_yaml(crudo: dict[str, Any]) -> dict[str, Any]:
-    """Aplana un YAML organizado en secciones a un dict de un solo nivel.
+def _leer_yaml(ruta: Path) -> dict[str, Any]:
+    """Lee un YAML obligatorio sin reemplazar errores con defaults ocultos."""
+    try:
+        import yaml
+    except ImportError as exc:
+        raise ErrorConfiguracion(
+            "PyYAML es necesario para leer la configuracion central. "
+            "Instalelo con: py -m pip install PyYAML"
+        ) from exc
+    try:
+        with ruta.open("r", encoding="utf-8") as archivo:
+            crudo = yaml.safe_load(archivo)
+        if not isinstance(crudo, dict):
+            raise ErrorConfiguracion("La raiz del YAML debe ser un mapa de parametros.")
+        datos = _aplanar_yaml(crudo)
+    except (OSError, yaml.YAMLError, ErrorConfiguracion) as exc:
+        raise ErrorConfiguracion(f"No se pudo leer '{ruta}': {exc}") from exc
+    LOGGER.info("Configuracion leida desde %s (%d parametros).", ruta, len(datos))
+    return datos
 
-    Permite escribir `config.yaml` agrupado por bloques (mas legible) sin que
-    el dataclass tenga que conocer esa estructura.
-    """
+
+def _aplanar_yaml(crudo: dict[str, Any]) -> dict[str, Any]:
+    """Aplana secciones del YAML y rechaza parametros repetidos entre bloques."""
     plano: dict[str, Any] = {}
     for clave, valor in crudo.items():
-        if isinstance(valor, dict):
-            plano.update(_aplanar_yaml(valor))
-        else:
-            plano[clave] = valor
+        valores = _aplanar_yaml(valor) if isinstance(valor, dict) else {clave: valor}
+        repetidos = plano.keys() & valores.keys()
+        if repetidos:
+            raise ErrorConfiguracion(f"Parametros repetidos en el YAML: {sorted(repetidos)}")
+        plano.update(valores)
     return plano

@@ -2,23 +2,19 @@
 # config.yaml - FUENTE UNICA DE VERDAD del pipeline de feature selection
 # Data sources / inputs: dataset indicado en entradas.ruta_dataset.
 # Created: 2026-07-26
-# Last modified: 2026-10-01
+# Last modified: 2026-10-04
 # Changelog:
+# - 2026-10-04: comentarios directos y mapa unico de columnas; KDE apagado.
+# - 2026-10-04: documenta resolucion Monte Carlo con correccion +1.
+# - 2026-10-02: deteccion y agrupacion de puestos para contexto KDE y exportacion.
+# - 2026-10-02: listas contiguas para conservar sin analizar o excluir totalmente.
+# - 2026-10-02: exclusiones manuales conservadas al final del dataset exportado.
+# - 2026-10-02: unica fuente de valores; config.py conserva tipos y validacion.
 # - 2026-10-01: configuracion centralizada del FE temporal/KDE y matriz IF/VAE.
-# -----------------------------------------------------------------------------
-# Los nombres de target / id / tiempo se definen SOLO aqui. Ningun modulo del
-# proyecto los tiene escritos a mano: todos los leen del objeto de
-# configuracion. Cambie los tres valores del bloque `entradas` y el pipeline
-# completo (diagnostico, univariado, bivariado, multivariado, Boruta, Excel y
-# hasta el generador de datos de demostracion) se adapta automaticamente.
-#
-# Precedencia:  defaults del codigo  <  este archivo  <  flags de linea de comandos
-# =============================================================================
 
-# -----------------------------------------------------------------------------
 # A. ENTRADAS OBLIGATORIAS
-# -----------------------------------------------------------------------------
 entradas:
+  # INGRESE AQUI la ruta y los nombres exactos de id, tiempo y target.
   ruta_dataset: "data/panel_sintetico.csv"
   columna_target: "target"          # <- cambie aqui el nombre de su target
   columna_id: "id_entidad"          # <- identificador de entidad del panel
@@ -26,51 +22,43 @@ entradas:
   usar_boruta: true
   ruta_salida_excel: "outputs/bitacora_feature_selection.xlsx"
 
-  # Columnas que deben ignorarse sin evaluarse (llaves secundarias, auditoria...)
-  columnas_excluidas: []
+  columnas_conservadas: []          # conservar al final, sin analizar
+  columnas_excluidas: []           # retirar antes del analisis; no exportar
 
-  # Dataset "listo para modelar": id + tiempo + target + solo las variables que
-  # superaron las tres fases obligatorias (univariada, bivariada, multivariada).
-  # Se exporta ADEMAS del Excel de bitacora, no en su lugar.
   exportar_dataset_final: true
   ruta_dataset_final: ""            # "" -> se deriva junto a ruta_salida_excel
   formato_dataset_final: "csv"      # "csv" | "parquet"
 
-# -----------------------------------------------------------------------------
+# A2. PUESTOS DE COLABORADOR (deteccion automatica antes del analisis)
+puestos_colaborador:
+  # Fuentes opcionales de puesto; el agrupado se agrega al contexto KDE.
+  usar_estandarizacion_puesto: true
+  columnas_puesto_prioridad: ["despuestocolaborador", "desposicioncolaborador"]
+  columna_puesto_agrupado: "despuestocolaboradoragrupado"
+  puesto_sin_dato: "SIN INFORMACION"
+
 # B. FASE 1 - UNIVARIADO
-# -----------------------------------------------------------------------------
 univariado:
-  # 1.1 Exceso de ceros + nulos
   umbral_ceros_nulos: 0.95          # criterio principal (95%)
   umbral_ceros_nulos_alterno: 0.90  # criterio conservador alterno (90%)
   usar_umbral_alterno: false        # true -> aplica el umbral de 90%
 
-  # 1.2 Baja variacion
   umbral_std_minimo: 0.00000001     # 1e-8  -> practicamente constante
   umbral_cv_minimo: 0.0001          # 1e-4  -> dispersion relativa despreciable
   umbral_dominancia: 0.99           # una sola categoria cubre >=99% de la muestra
   umbral_iqr_minimo: 0.0            # IQR <= 0 -> percentiles comprimidos
   minimo_valores_unicos: 2
 
-  # Avisos de CATEGORICAS (no eliminan, solo documentan; ver docs/documentacion.html):
   umbral_dominancia_aviso: 0.90     # categorica con clase mayoritaria en [90%, 99%) -> aviso
   umbral_alta_cardinalidad: 20      # categorica con mas de 20 niveles -> aviso (one-hot no recomendable)
 
-# -----------------------------------------------------------------------------
 # B2. FASE 1B - AGRUPACION DE CATEGORICAS DE CARDINALIDAD MUY ALTA POR NOMBRE
-# -----------------------------------------------------------------------------
-# Comun a ambas ramas (no usa el target). Agrupa por similitud LEXICA del
-# nombre (TF-IDF de 3-gramas + K-Means, k elegido por silueta) las categoricas
-# con demasiados niveles y SIN una categoria dominante (si domina, el problema
-# es otro: ver umbral_dominancia_aviso arriba). Ver docs/documentacion.html.
 agrupacion_categorica:
   usar_agrupacion_categorica_nombre: true
   umbral_cardinalidad_clustering: 100   # activa el clustering (no solo el aviso) por encima de esto
   max_k_agrupacion_categorica: 30       # tope del barrido de k explorado por silueta
 
-# -----------------------------------------------------------------------------
 # C. FASE 2 - BIVARIADO (Information Value y Gini)
-# -----------------------------------------------------------------------------
 bivariado:
   n_bins: 10                        # bins objetivo por cuantiles para WOE/IV
   min_prop_bin: 0.03                # >=3% de la muestra por bin (estabilidad del WOE)
@@ -85,9 +73,6 @@ bivariado:
   umbral_gini_minimo: 0.05          # Gini < 0.05 -> discriminacion despreciable
   umbral_score_minimo: 0.0          # piso sobre el score compuesto (0 = inactivo)
 
-  # Piso de ruido: umbral adaptativo que depende del tamano muestral y del
-  # numero de bins. Una variable aleatoria obtiene IV > 0 solo por azar; este
-  # piso mide cuanto. El umbral efectivo = max(umbral fijo, piso de ruido).
   usar_piso_ruido: true
   alpha_ruido: 0.01                 # significancia del contraste contra el azar
   bonferroni_ruido: false           # true -> corrige por n de variables evaluadas
@@ -98,35 +83,25 @@ bivariado:
   umbral_psi: 0.25                  # estabilidad temporal (especifico de panel)
   excluir_por_inestabilidad: false
 
-# -----------------------------------------------------------------------------
 # C2. FASE 2 ALTERNATIVA - RELEVANCIA NO SUPERVISADA (fallback sin target)
-# -----------------------------------------------------------------------------
-# Se activa SOLO si columna_target no existe en el dataset cargado. Reemplaza
-# IV/Gini (exigen etiqueta) por Laplacian Score + dispersion robusta, pensado
-# para alimentar Isolation Forest o un autoencoder variacional (VAE). Boruta
-# no se ejecuta en este modo (exige target). Ver docs/documentacion.html.
 no_supervisado:
   laplacian_k_vecinos: 10           # vecinos del grafo k-NN (He, Cai y Niyogi, 2005)
   laplacian_max_filas: 20000        # submuestreo del grafo (0 = sin limite)
-  laplacian_n_permutaciones: 200    # resolucion del p-valor = 1/n; 200 -> resolucion 0.005
+  laplacian_n_permutaciones: 200    # p minimo = 1/(n+1); 200 -> 1/201
   alpha_ruido_laplaciano: 0.05      # significancia del contraste contra el azar
   bonferroni_ruido_laplaciano: false # true -> corrige por n de variables evaluadas
   peso_laplaciano: 0.50             # ponderacion balanceada por defecto
   peso_dispersion: 0.50
   top_n_no_supervisado: 0           # >0 -> conserva solo las N mejores
 
-# -----------------------------------------------------------------------------
 # D. FASE 3 - MULTIVARIADO
-# -----------------------------------------------------------------------------
 multivariado:
   umbral_correlacion: 0.90          # |asociacion| > 0.90 -> redundancia
   metodo_correlacion: "spearman"    # "spearman" (robusto) | "pearson"
   umbral_vif: 10.0                  # VIF > 10 -> multicolinealidad severa
   excluir_por_vif: false            # por defecto informativo, no eliminatorio
 
-# -----------------------------------------------------------------------------
 # E. FASE 4 - BORUTA (opcional)
-# -----------------------------------------------------------------------------
 boruta:
   motor_boruta: "auto"              # auto | borutapy | borutashap | nativo
   boruta_n_estimadores: 200
@@ -135,9 +110,7 @@ boruta:
   boruta_profundidad_max: 6
   boruta_max_filas: 100000          # submuestreo para acotar costo (0 = sin limite)
 
-# -----------------------------------------------------------------------------
 # F. EJECUCION
-# -----------------------------------------------------------------------------
 ejecucion:
   semilla: 42                       # reproducibilidad
   n_jobs: -1
@@ -146,39 +119,28 @@ ejecucion:
   nivel_log: "INFO"                 # DEBUG | INFO | WARNING | ERROR
   csv_sep: ","
   csv_encoding: "utf-8"
-  generar_demo_si_falta: true       # genera el panel sintetico SOLO si la carpeta de datos
-                                     # esta vacia (arranque en limpio). Si la carpeta ya tiene
-                                     # archivos y ruta_dataset no aparece, el pipeline se
-                                     # detiene con error en vez de generar datos falsos.
-                                     # Poner en false para desactivar el auto-generado del todo
-                                     # (ej. entornos sellados / produccion).
+  csv_encodings_fallback: ["utf-8-sig", "cp1252", "latin1"] # solo ante error de decoding
+  generar_demo_si_falta: true       # genera demo solo si falta el dataset y la carpeta esta vacia
 
-# -----------------------------------------------------------------------------
 # G. FEATURE ENGINEERING PARA DETECCION DE ANOMALIAS (PREVIO A LA DEPURACION)
-# -----------------------------------------------------------------------------
-# ACTIVACION CORRECTA:
-# 1) cambie context_vars y behavior_vars por columnas REALES del dataset;
-# 2) ponga usar_feature_engineering: true y ejecute `py run_pipeline.py`, O deje
-#    false y active una sola corrida con `--usar-feature-engineering true`;
-# 3) confirme que la consola muestre "FE - Temporales y KDE condicional".
-# El flag CLI solo cambia el interruptor: las listas siempre se leen de este YAML.
-# Cuando esta apagado, el comportamiento del pipeline es identico al historico.
-# Cuando esta encendido, las features generadas entran como candidatas normales
-# a las fases 0-3: si no aportan, las reglas existentes las retiran.
 feature_engineering:
+  # Mantener false hasta reemplazar las dos listas por columnas reales.
   usar_feature_engineering: false
 
-  # Ejemplo para la especificacion del caso de uso. Reemplace estos nombres por
-  # columnas reales antes de activar el interruptor.
+  # INGRESE AQUI columnas de contexto: edad agrupada, puesto, zona, etc.
+  # Definen grupos comparables; no son las variables cuya rareza se mide.
   context_vars:
     - "age_group"
     - "job_position"
+  # INGRESE AQUI columnas numericas cuya rareza quiere medir: conteos, montos, saldos.
+  # Cada columna genera sus propias features temporales y KDE.
   behavior_vars:
     - "credit_count"
     - "credit_amount"
     - "account_balance"
   incluir_context_vars_en_seleccion: false # false: solo definen la poblacion comparable
 
+  # Tipo de kernel; no ingrese nombres de columnas en este parametro.
   kernel_type: "gaussian"
   reference_mode: "joint_and_marginal" # joint | marginal | joint_and_marginal
   min_group_size: 100
@@ -189,8 +151,6 @@ feature_engineering:
   epsilon: 0.00000001
   kde_max_reference_rows: 20000
 
-  # Matriz comun para Isolation Forest y VAE. Imputacion, frequency encoding y
-  # RobustScaler se ajustan solo con los meses de TRAIN.
   preparar_modelos_anomalia: true
   meses_holdout_anomalia: 3
   ruta_matriz_anomalias: ""            # "" -> junto al Excel, sufijo _matriz_anomalias.csv

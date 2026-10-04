@@ -5,6 +5,13 @@ metricas.py
 Biblioteca de METRICAS estadisticas del pipeline. Es codigo puro de calculo:
 no toma decisiones de seleccion ni escribe archivos. Las fases lo consumen.
 
+Data sources / inputs: Series/DataFrames cargados desde ConfigPipeline.ruta_dataset.
+Created: 2026-08-26
+Last modified: 2026-10-04
+Changelog:
+- 2026-10-04: VIF por regresion para matrices singulares; distingue Spearman de Somers D.
+- 2026-10-04: p-valores Monte Carlo con correccion +1 y vecinos sin autoaristas.
+
 Contenido
 ---------
 * Discretizacion supervisada por cuantiles (binning) para WOE/IV.
@@ -19,9 +26,8 @@ Convenciones
 ------------
 * ``evento``   = target == 1 (el suceso que se quiere predecir, p. ej. default).
 * ``no evento``= target == 0.
-* Todas las funciones devuelven ``np.nan`` (no lanzan) cuando la metrica no es
-  calculable, y la fase que las llama documenta el motivo. Nunca se elimina una
-  variable "en silencio" por un fallo de calculo.
+* Las metricas no calculables se reportan con ``np.nan``; VIF usa ``np.inf``
+  cuando existe colinealidad exacta. Las fases documentan sus decisiones.
 """
 
 from __future__ import annotations
@@ -335,10 +341,8 @@ def gini_continuo(x: pd.Series, y: pd.Series) -> tuple[float, float]:
     """Aproximacion del Gini cuando el target es CONTINUO.
 
     Se usa la correlacion de rangos de Spearman como sustituto: es una medida
-    de concordancia monotona en [-1, 1], la misma escala del Gini, y coincide
-    con el D de Somers (la generalizacion natural del Gini) salvo por el
-    tratamiento de empates. Se documenta explicitamente porque no es el Gini
-    clasico de clasificacion.
+    de concordancia monotona en [-1, 1]. No equivale a Somers D ni al Gini
+    clasico de clasificacion, incluso en muestras sin empates.
     """
     from scipy.stats import spearmanr
 
@@ -489,8 +493,8 @@ def calcular_vif(df_num: pd.DataFrame) -> pd.Series:
     otras sin estar fuertemente correlacionada con ninguna en particular.
     Regla practica: VIF > 10 indica multicolinealidad severa.
 
-    Se usa la pseudo-inversa porque, con variables casi redundantes, la matriz
-    de correlacion es singular y la inversa exacta no existe.
+    Si la matriz es singular, se usa regresion por columna: la diagonal de
+    una pseudo-inversa no representa el VIF en ese caso.
     """
     X = df_num.apply(pd.to_numeric, errors="coerce")
     X = X.loc[:, X.std(numeric_only=True) > 0].dropna()
@@ -499,12 +503,24 @@ def calcular_vif(df_num: pd.DataFrame) -> pd.Series:
 
     R = X.corr(method="pearson").to_numpy()
     try:
-        R_inv = np.linalg.pinv(R)
+        if np.linalg.matrix_rank(R) == len(R):
+            vifs = np.diag(np.linalg.inv(R)).astype(float)
+        else:
+            valores = X.to_numpy(dtype=float)
+            valores = (valores - valores.mean(axis=0)) / valores.std(axis=0)
+            vifs = []
+            for j in range(valores.shape[1]):
+                objetivo = valores[:, j]
+                predictores = np.delete(valores, j, axis=1)
+                coef = np.linalg.lstsq(predictores, objetivo, rcond=None)[0]
+                residual = float(np.sum((objetivo - predictores @ coef)**2))
+                total = float(objetivo @ objetivo)
+                vifs.append(np.inf if residual <= np.finfo(float).eps * total else total / residual)
+            vifs = np.asarray(vifs)
     except np.linalg.LinAlgError:
         return pd.Series(dtype=float)
 
-    vifs = np.diag(R_inv).astype(float)
-    vifs = np.where(np.isfinite(vifs) & (vifs > 0), vifs, np.nan)
+    vifs = np.where(vifs > 0, np.maximum(vifs, 1.0), np.nan)
     return pd.Series(vifs, index=X.columns)
 
 
@@ -888,8 +904,10 @@ def _grafo_vecinos(X: np.ndarray, k: int):
     k = max(1, min(k, n - 1))
     vecinos = NearestNeighbors(n_neighbors=k + 1).fit(X)
     distancias, indices = vecinos.kneighbors(X)
-    # Columna 0 = el propio punto (distancia 0): se descarta.
-    distancias, indices = distancias[:, 1:], indices[:, 1:]
+    # Con puntos duplicados, el propio indice no siempre aparece primero.
+    posiciones = np.array([np.flatnonzero(fila != i)[:k] for i, fila in enumerate(indices)])
+    distancias = np.take_along_axis(distancias, posiciones, axis=1)
+    indices = np.take_along_axis(indices, posiciones, axis=1)
 
     t = float(np.mean(distancias**2))
     t = t if t > 1e-12 else 1.0
@@ -1005,7 +1023,7 @@ def laplacian_score_con_piso_ruido(
     generadas a proposito dejan de rechazarse falsamente (p-valores
     uniformemente distribuidos en [0, 1], como corresponde bajo la hipotesis
     nula) mientras que columnas con estructura de cluster real inyectada a
-    proposito se detectan con p-valor ~0.
+    proposito se detectan con p-valores pequenos, acotados por 1/(B+1).
 
     El costo de la correccion es real: en vez de UN grafo, se construyen
     tantos grafos como columnas candidatas (cada uno con una columna menos).
@@ -1029,7 +1047,7 @@ def laplacian_score_con_piso_ruido(
     # positivos solo por azar (visible en el propio experimento de validacion
     # de esta funcion: 1 de 10 columnas de ruido puro se marco significativa
     # con alpha=0.05 sin correccion, la tasa de falsos positivos esperada).
-    alpha_efectivo = min(max(alpha / max(bonferroni_n, 1), 1e-6), 0.5)
+    alpha_efectivo = alpha / max(bonferroni_n, 1)
 
     rng = np.random.default_rng(semilla)
     Xv, indice = _estandarizar_y_submuestrear(X, semilla, max_filas)
@@ -1068,10 +1086,8 @@ def laplacian_score_con_piso_ruido(
             })
             continue
 
-        # p-valor unilateral: fraccion de puntajes NULOS tan bajos (o mas) como
-        # el real. Un p-valor pequeno dice que un puntaje asi de bajo (bueno)
-        # es raro bajo la hipotesis de ruido puro -> hay estructura real.
-        p_valor = float((nulos <= real).mean())
+        # Monte Carlo unilateral: incluir el observado evita p=0.
+        p_valor = float((1 + np.count_nonzero(nulos <= real)) / (len(nulos) + 1))
         piso = float(np.quantile(nulos, alpha_efectivo))
         filas.append({
             "columna": col, "laplacian_score": real, "piso_ruido_laplaciano": piso,

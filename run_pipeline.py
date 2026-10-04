@@ -10,20 +10,20 @@ Metadata
 Data sources / inputs: ``config.yaml`` y el dataset indicado por
 ``entradas.ruta_dataset``.
 Created: 2026-07-26
-Last modified: 2026-10-01
+Last modified: 2026-10-02
 Changelog:
 - 2026-10-01: se agrego el interruptor CLI del FE temporal/KDE y la salida de
   la matriz preparada para Isolation Forest/VAE.
 
+- 2026-10-02: configuracion central antes del logging y bootstrap; se respetan
+  ruta_log, nivel_log, autoinstalar_dependencias y usar_boruta del YAML.
+
 Orden de arranque (importante):
 
-    1. Configurar el logging (stdlib, no necesita nada instalado).
-    2. Ejecutar el BOOTSTRAP de dependencias (revisa -> instala -> confirma).
-    3. Solo DESPUES importar los modulos que dependen de pandas/sklearn.
-
-Ese orden es el que permite que el proyecto se ejecute en un entorno limpio:
-si `pandas` se importara arriba del archivo, el script moriria antes de poder
-instalarlo.
+    1. Leer config.yaml y aplicar los flags (requiere PyYAML).
+    2. Configurar el logging con cfg.ruta_log y cfg.nivel_log.
+    3. Ejecutar el bootstrap con las opciones de la configuracion.
+    4. Importar los modulos que dependen de pandas/sklearn.
 
 Uso
 ---
@@ -34,7 +34,7 @@ Uso
     py run_pipeline.py --sin-autoinstall        (entornos sellados)
 
 Todos los flags son opcionales: lo que no se pase se toma de `config.yaml` y,
-en su defecto, de los valores por defecto del codigo.
+en su defecto, del config.yaml central del proyecto.
 """
 
 from __future__ import annotations
@@ -75,8 +75,8 @@ def construir_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--config", default="config.yaml",
-                   help="Archivo YAML de configuracion.")
+    p.add_argument("--config", default=None,
+                   help="YAML alternativo; por defecto usa el config.yaml del proyecto.")
 
     g = p.add_argument_group("Entradas obligatorias (sobrescriben el YAML)")
     g.add_argument("--ruta-dataset", dest="ruta_dataset")
@@ -114,35 +114,13 @@ def construir_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    """Arranque completo: logging -> bootstrap -> configuracion -> pipeline."""
+    """Arranque completo: configuracion -> logging -> bootstrap -> pipeline."""
     args = construir_parser().parse_args()
 
-    # === 1. Logging ========================================================
-    from featsel.logging_utils import configurar_logging
-
-    nivel = getattr(logging, args.nivel_log or "INFO")
-    handler_memoria = configurar_logging("outputs/featsel.log", nivel)
     log = logging.getLogger("featsel.main")
-
     try:
-        # === 2. Bootstrap de dependencias ==================================
-        # Se resuelve ANTES de importar nada que dependa de pandas/sklearn.
-        from featsel import bootstrap
-
-        usar_boruta = _a_bool(args.usar_boruta)
-        if usar_boruta is None:
-            # Aun no se leyo el YAML (necesita PyYAML). Se asume True para no
-            # dejar la fase 4 sin dependencias; instalar de mas es preferible a
-            # tener que reejecutar todo el proceso.
-            usar_boruta = True
-
-        reporte_boot = bootstrap.arrancar(
-            usar_boruta=usar_boruta,
-            autoinstalar=not args.sin_autoinstall,
-        )
-
-        # === 3. Configuracion ==============================================
         from featsel.config import cargar_config
+        from featsel.logging_utils import configurar_logging
 
         overrides = {
             "ruta_dataset": args.ruta_dataset,
@@ -163,7 +141,17 @@ def main() -> int:
             "semilla": args.semilla,
             "nivel_log": args.nivel_log,
         }
+        if args.sin_autoinstall:
+            overrides["autoinstalar_dependencias"] = False
         cfg = cargar_config(args.config, overrides)
+        handler_memoria = configurar_logging(cfg.ruta_log, getattr(logging, cfg.nivel_log))
+
+        from featsel import bootstrap
+
+        reporte_boot = bootstrap.arrancar(
+            usar_boruta=cfg.usar_boruta,
+            autoinstalar=cfg.autoinstalar_dependencias,
+        )
 
         # === 4. Dataset de demostracion (si corresponde) ===================
         # El auto-generado es solo para arrancar en limpio (carpeta de datos
