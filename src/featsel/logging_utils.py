@@ -92,13 +92,20 @@ def obtener_logger(nombre: str) -> logging.Logger:
 
 
 class BarraProgreso:
-    """Barra de progreso de texto plano para seguir el avance del pipeline.
+    """Barra de progreso del pipeline, con ``tqdm`` como motor principal.
 
-    No redibuja la linea con ``\\r``: cada fase ya vuelca varias lineas de
-    log a stdout mientras corre, asi que una barra "en el mismo lugar"
-    quedaria cortada por ese ruido. En su lugar imprime una linea nueva por
-    paso completado; el resultado es un historial legible de que se
-    ejecuto y cuanto falta, sin depender de ninguna libreria externa.
+    ``tqdm`` escribe a stderr y redibuja su propia linea con ``\\r``; el
+    logging del pipeline escribe a stdout con lineas completas (ver
+    ``configurar_logging``). Al ser dos streams distintos no se pisan entre
+    si -- es exactamente el patron que tqdm esta disenado para soportar
+    (barra + logging intercalados), por eso no hace falta coordinarlos a mano.
+
+    Si ``tqdm`` no esta instalado (o `bootstrap` no pudo resolverlo), cae
+    automaticamente a un contador de texto plano: una linea nueva por paso
+    completado, sin depender de ninguna libreria externa. La interfaz
+    publica (``BarraProgreso(pasos)`` + ``.avanzar()``) es identica en
+    ambos casos, asi que el resto del pipeline no necesita saber cual de
+    los dos esta activo.
     """
 
     def __init__(self, pasos: list[str], ancho: int = 30) -> None:
@@ -106,12 +113,30 @@ class BarraProgreso:
         self._total = len(pasos) or 1
         self._ancho = ancho
         self._actual = 0
+        self._tqdm = None
+        try:
+            from tqdm import tqdm
+
+            self._tqdm = tqdm(
+                total=self._total, unit="fase",
+                bar_format="  {desc}: {bar} {n_fmt}/{total_fmt} ({percentage:3.0f}%)",
+            )
+        except ImportError:
+            pass
 
     def avanzar(self, etiqueta: str | None = None) -> None:
-        """Marca completado el siguiente paso e imprime la barra actualizada."""
+        """Marca completado el siguiente paso y actualiza la barra."""
         self._actual = min(self._actual + 1, self._total)
         if etiqueta is None:
             etiqueta = self._pasos[self._actual - 1] if self._actual <= len(self._pasos) else ""
+
+        if self._tqdm is not None:
+            self._tqdm.set_description_str(etiqueta, refresh=False)
+            self._tqdm.update(1)
+            if self._actual >= self._total:
+                self._tqdm.close()
+            return
+
         pct = self._actual / self._total
         llenado = int(round(pct * self._ancho))
         barra = "#" * llenado + "-" * (self._ancho - llenado)

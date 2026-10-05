@@ -21,6 +21,7 @@ PyYAML>=6.0            # lectura obligatoria de config.yaml
 # --- Soporte / calidad de vida (opcionales, el pipeline degrada con gracia) --
 joblib>=1.4            # paralelismo de scikit-learn
 pyarrow>=16.0          # lectura de datasets .parquet / .feather
+tqdm>=4.66              # barra de progreso de la ejecucion (fallback: texto plano)
 
 # --- Fase 4 opcional: Boruta / BorutaShap -----------------------------------
 # Si no se pueden instalar, el pipeline usa la implementacion nativa incluida

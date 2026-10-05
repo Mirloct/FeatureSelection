@@ -82,6 +82,9 @@ DEPENDENCIAS_NUCLEO: tuple[Dependencia, ...] = (
 DEPENDENCIAS_SOPORTE: tuple[Dependencia, ...] = (
     Dependencia("joblib", "joblib", False, "paralelismo de scikit-learn"),
     Dependencia("pyarrow", "pyarrow", False, "lectura de .parquet / .feather"),
+    # Si falta, BarraProgreso cae sola a un contador de texto plano (ver
+    # logging_utils.py): nunca detiene el pipeline por esto.
+    Dependencia("tqdm", "tqdm", False, "barra de progreso de la ejecucion"),
 )
 
 #: Dependencias de la fase 4 (opcional). Solo se resuelven si usar_boruta=True.

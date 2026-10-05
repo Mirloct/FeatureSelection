@@ -853,6 +853,19 @@ def ejecutar(
     LOGGER.info("# PIPELINE DE SELECCION DE VARIABLES PARA DATOS DE PANEL")
     LOGGER.info("# target='%s' (se verifica al cargar) | id='%s' | tiempo='%s' | usar_boruta=%s",
                 cfg.columna_target, cfg.columna_id, cfg.columna_tiempo, cfg.usar_boruta)
+    if cfg.columnas_conservadas:
+        LOGGER.info(
+            "# CONSERVADAS (%d, NO pasan por ninguna prueba estadistica; viajan "
+            "directo al dataset final): %s",
+            len(cfg.columnas_conservadas), ", ".join(cfg.columnas_conservadas),
+        )
+    else:
+        LOGGER.info("# Columnas conservadas: (ninguna configurada en columnas_conservadas)")
+    if cfg.columnas_excluidas:
+        LOGGER.info(
+            "# EXCLUIDAS (%d, se retiran antes del analisis; no se evaluan ni se exportan): %s",
+            len(cfg.columnas_excluidas), ", ".join(cfg.columnas_excluidas),
+        )
     LOGGER.info("#" * 78)
 
     # === Carga y tipificacion =============================================
