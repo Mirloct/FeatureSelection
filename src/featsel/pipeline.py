@@ -1021,6 +1021,17 @@ def ejecutar(
 
     resultados["agrupacion_categorica"] = reporte_agrupacion
 
+    # Se reporta aqui (no solo en el log de validacion) porque es el motivo
+    # mas comun de confusion: el usuario configura columnas_conservadas pero
+    # sigue corriendo contra un dataset que no las tiene (p. ej. el demo
+    # sintetico, u otro archivo), y el resultado -- correctamente -- no las
+    # incluye. Que esto aparezca tambien en el resumen final de consola evita
+    # tener que ir a buscar la advertencia entre las lineas del log.
+    resultados["conservadas_configuradas"] = list(cfg.columnas_conservadas)
+    resultados["conservadas_encontradas"] = [
+        c for c in cfg.columnas_conservadas if c in df.columns
+    ]
+
     # === Exportacion (capa separada, comun a ambos flujos) =================
     # El log se vuelca justo antes de exportar para que la hoja de bitacora
     # incluya todo lo ocurrido hasta este punto.

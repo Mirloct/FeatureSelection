@@ -200,6 +200,18 @@ def main() -> int:
         print(f"  Variables finales: {len(sel)}")
         for i, v in enumerate(sel, start=1):
             print(f"      {i:>3}. {v}")
+        configuradas = resultados.get("conservadas_configuradas", [])
+        if configuradas:
+            encontradas = resultados.get("conservadas_encontradas", [])
+            faltantes = [c for c in configuradas if c not in encontradas]
+            if faltantes:
+                print(f"\n  !! AVISO: {len(faltantes)} de {len(configuradas)} columnas_conservadas "
+                      f"NO estan en '{cfg.ruta_dataset}' y NO se exportaron: {faltantes}")
+                print(f"     Revise que 'entradas.ruta_dataset' apunte al archivo correcto "
+                      f"y que el nombre coincida EXACTO con el encabezado real.")
+            else:
+                print(f"\n  Columnas conservadas (van al dataset final sin pasar por la "
+                      f"seleccion): {encontradas}")
         print(f"\n  Bitacora Excel   : {resultados['ruta_excel']}")
         if resultados.get("ruta_dataset_final"):
             print(f"  Dataset final    : {resultados['ruta_dataset_final']}")
