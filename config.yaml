@@ -4,6 +4,10 @@
 # Created: 2026-07-26
 # Last modified: 2026-10-04
 # Changelog:
+# - 2026-10-04: columnas_conservadas apunta a las 4 columnas reales del
+#   usuario (despuestocolaborador, codmatricula, desareapersonal,
+#   grupokernel) que deben viajar al dataset final sin pasar por la
+#   seleccion estadistica.
 # - 2026-10-04: se retiro el feature engineering temporal/KDE y la
 #   estandarizacion de puestos (implementados en el codigo base de entrada).
 # - 2026-10-04: documenta resolucion Monte Carlo con correccion +1.
@@ -21,7 +25,9 @@ entradas:
   usar_boruta: true
   ruta_salida_excel: "outputs/bitacora_feature_selection.xlsx"
 
-  columnas_conservadas: []          # conservar al final, sin analizar
+  # Conservar al final, sin pasar por el feature selection (viajan directo
+  # al dataset final, con sus valores y tipos originales).
+  columnas_conservadas: ["despuestocolaborador", "codmatricula", "desareapersonal", "grupokernel"]
   columnas_excluidas: []           # retirar antes del analisis; no exportar
 
   exportar_dataset_final: true
