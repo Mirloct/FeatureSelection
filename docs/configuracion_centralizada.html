@@ -65,7 +65,8 @@
 Created: 2026-10-02
 Last modified: 2026-10-04
 Changelog: 2026-10-02: guia de configuracion centralizada.
-- 2026-10-04: mapa directo de columnas y estado KDE apagado.
+- 2026-10-04: se retiro el feature engineering temporal/KDE y la
+  estandarizacion de puestos (implementados en el codigo base de entrada).
 - 2026-10-04: prueba de integridad del esquema y enlace a auditoria final. -->
 <body>
 <div class="wrap">
@@ -98,15 +99,10 @@ flowchart TD
   </section>
 
   <section><h2>Dónde ingresar columnas</h2>
-<p>Edite solo <code>config.yaml</code>. KDE permanece apagado con nombres de ejemplo.</p>
-<ul><li><code>entradas</code>: ruta_dataset, columna_id, columna_tiempo, columna_target y listas manuales.</li>
-<li><code>feature_engineering.context_vars</code>: nombres de columnas para definir grupos comparables.</li>
-<li><code>feature_engineering.behavior_vars</code>: nombres de columnas numéricas cuya rareza quiere medir.</li>
-<li><code>puestos_colaborador.columnas_puesto_prioridad</code>: fuentes opcionales de puesto.</li></ul>
-<p>Después de reemplazar los ejemplos, active <code>usar_feature_engineering: true</code>.
-<code>kernel_type</code> selecciona el kernel; no recibe columnas.</p></section>
+<p>Edite solo <code>config.yaml</code>.</p>
+<ul><li><code>entradas</code>: ruta_dataset, columna_id, columna_tiempo, columna_target y listas manuales (<code>columnas_conservadas</code>, <code>columnas_excluidas</code>).</li></ul></section>
 <section><h2>Auditoría final</h2><p><a href="auditoria_final.html">Tres iteraciones y correcciones matemáticas</a>. El esquema de ConfigPipeline coincide con todas las claves del YAML central.</p></section>
-<section><h2>Vigencia</h2><p>Revisado el 2026-10-04. Fuente de valores: <code>config.yaml</code>. Validación: <code>py -m pytest -q</code>, 115 pruebas aprobadas. Los detalles de implementación y su historial se mantienen en los módulos Python.</p></section>
+<section><h2>Vigencia</h2><p>Revisado el 2026-10-04. Fuente de valores: <code>config.yaml</code>. Validación: <code>py -m pytest -q</code>, 38 pruebas aprobadas. Los detalles de implementación y su historial se mantienen en los módulos Python.</p></section>
 
   <section>
     <h2>Comportamiento</h2>

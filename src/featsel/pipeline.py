@@ -9,13 +9,12 @@ Metadata
 --------
 Data sources / inputs: dataset de ``cfg.ruta_dataset`` y ``config.yaml``.
 Created: 2026-08-31
-Last modified: 2026-10-02
+Last modified: 2026-10-04
 Changelog:
-- 2026-10-02: prepara puestos antes del diagnostico y usa el grupo en KDE/salida.
+- 2026-10-04: se retiro el feature engineering temporal/KDE y la preparacion
+  de puestos (implementados ahora en el codigo base de entrada del usuario).
 - 2026-10-02: elimina columnas_excluidas antes del analisis y conserva columnas_conservadas.
 - 2026-10-02: conserva las exclusiones manuales al final del dataset exportado.
-- 2026-10-01: se inserto FE temporal/KDE antes del diagnostico y se agrego la
-  preparacion time-safe de la matriz comun para Isolation Forest/VAE.
 
 Flujo SUPERVISADO (columna_target presente en el dataset)
 -----------------------------------------------------------
@@ -66,9 +65,7 @@ from . import (
     fase2_no_supervisado,
     fase3_multivariado,
     fase4_boruta,
-    feature_engineering_anomalias,
     io_utils,
-    puestos,
     reporte_excel,
     validaciones,
 )
@@ -159,47 +156,10 @@ def _construir_embudo(
     return pd.DataFrame(filas)
 
 
-def _agregar_resumen_fe(
-    add, cfg: ConfigPipeline, catalogo_fe: pd.DataFrame, ablacion_fe: pd.DataFrame,
-) -> None:
-    """Fila(s) de visibilidad del feature engineering en el resumen ejecutivo.
-
-    Sin esto, activar `usar_feature_engineering` era invisible en la hoja
-    00_Resumen: habia que abrir 01e-01h para enterarse de que corrio. Las
-    hojas de detalle siguen siendo la fuente completa; esto es solo el titular.
-    """
-    if not cfg.usar_feature_engineering:
-        return
-    if catalogo_fe is None or catalogo_fe.empty:
-        add("A2. Feature Engineering", "Estado", "ACTIVO (sin features generadas)",
-            "Revisar 01e_FE_Catalogo: puede indicar un dataset sin historia suficiente.")
-        return
-    n_temporal = int((catalogo_fe["familia"] == "TEMPORAL").sum())
-    n_kde = int((catalogo_fe["familia"] == "KDE").sum())
-    add("A2. Feature Engineering", "Features generadas",
-        f"{len(catalogo_fe)} ({n_temporal} temporales, {n_kde} KDE)",
-        f"context_vars={cfg.context_vars} | behavior_vars={cfg.behavior_vars} | "
-        f"modo={cfg.reference_mode}. Ver 01e_FE_Catalogo.")
-    if ablacion_fe is not None and not ablacion_fe.empty:
-        total = ablacion_fe[ablacion_fe["familia"] == "TOTAL_FE"]
-        if not total.empty:
-            fila = total.iloc[0]
-            tasa = fila["tasa_supervivencia"]
-            add("A2. Feature Engineering", "Features FE seleccionadas",
-                f"{int(fila['seleccionadas'])} de {int(fila['generadas'])} "
-                f"({tasa:.1%})" if pd.notna(tasa) else f"{int(fila['seleccionadas'])} de {int(fila['generadas'])}",
-                "Supervivencia tras univariado+relevancia+redundancia. Detalle por familia en 01g_FE_Ablacion.")
-    if cfg.preparar_modelos_anomalia:
-        add("A2. Feature Engineering", "Matriz IF/VAE",
-            f"TRAIN/HOLDOUT con corte en los ultimos {cfg.meses_holdout_anomalia} periodos",
-            "Imputacion/codificacion/escalado aprendidos solo en TRAIN. Ver 01h_Prep_IF_VAE.")
-
-
 def _construir_resumen(
     cfg: ConfigPipeline, df: pd.DataFrame, uni: pd.DataFrame, biv: pd.DataFrame,
     multi: pd.DataFrame, boruta_meta: dict, rep_val: validaciones.ReporteValidacion,
     diagnostico: pd.DataFrame, segundos: float, reporte_agrupacion: pd.DataFrame,
-    catalogo_fe: pd.DataFrame, ablacion_fe: pd.DataFrame,
 ) -> pd.DataFrame:
     """Resumen ejecutivo en formato seccion / concepto / valor / comentario."""
     n_total = df.shape[1]
@@ -229,8 +189,6 @@ def _construir_resumen(
         "Columnas sin evaluar; se conservan al final del dataset exportado.")
     add("B. Entradas", "columnas_excluidas", ", ".join(cfg.columnas_excluidas) or "(ninguna)",
         "Columnas excluidas completamente del analisis y la exportacion.")
-
-    _agregar_resumen_fe(add, cfg, catalogo_fe, ablacion_fe)
 
     # --- C. Estado del dataset --------------------------------------------
     add("C. Dataset", "Filas", df.shape[0], "Observaciones del panel.")
@@ -598,7 +556,6 @@ def _construir_resumen_no_supervisado(
     cfg: ConfigPipeline, df: pd.DataFrame, uni: pd.DataFrame, rel: pd.DataFrame,
     multi: pd.DataFrame, rep_val: validaciones.ReporteValidacion,
     diagnostico: pd.DataFrame, segundos: float, reporte_agrupacion: pd.DataFrame,
-    catalogo_fe: pd.DataFrame, ablacion_fe: pd.DataFrame,
 ) -> pd.DataFrame:
     """Resumen ejecutivo del flujo NO SUPERVISADO (sin target)."""
     n_total = df.shape[1]
@@ -628,8 +585,6 @@ def _construir_resumen_no_supervisado(
         "Columnas excluidas completamente del analisis y la exportacion.")
     add("B. Entradas", "Modelos objetivo declarados", "Isolation Forest, autoencoder variacional (VAE)",
         "Justifica la eleccion de Laplacian Score + dispersion robusta como criterios de la fase 2.")
-
-    _agregar_resumen_fe(add, cfg, catalogo_fe, ablacion_fe)
 
     add("C. Dataset", "Filas", df.shape[0], "Observaciones del panel.")
     add("C. Dataset", "Columnas totales", n_total, "No incluye target: no existe en este dataset.")
@@ -903,7 +858,6 @@ def ejecutar(
     # === Carga y tipificacion =============================================
     df = io_utils.cargar_dataset(cfg)
     df = df.drop(columns=cfg.columnas_excluidas, errors="ignore")
-    df, cfg = puestos.preparar(df, cfg)
     df, tipos = io_utils.tipificar_dataset(df, cfg)
 
     # === Validacion estructural del panel ==================================
@@ -926,10 +880,7 @@ def ejecutar(
                 "el Random Forest de contraste y no existe en este dataset."
             )
 
-    pasos_barra = []
-    if cfg.usar_feature_engineering:
-        pasos_barra.append("FE - Temporales y KDE condicional")
-    pasos_barra += ["Fase 0 - Diagnostico inicial", "Fase 1 - Univariado"]
+    pasos_barra = ["Fase 0 - Diagnostico inicial", "Fase 1 - Univariado"]
     if cfg.usar_agrupacion_categorica_nombre:
         pasos_barra.append("Fase 1B - Agrupacion de categoricas por nombre")
     if rep_val.modo_supervisado:
@@ -945,18 +896,6 @@ def ejecutar(
         ]
     barra = BarraProgreso(pasos_barra)
     print(f"\n>> Ejecutando pipeline ({len(pasos_barra)} pasos)...")
-
-    # === FEATURE ENGINEERING OPCIONAL (antes de cualquier depuracion) ======
-    # La validacion estructural ya garantizo una llave entity x month unica.
-    # Desde este punto las variables creadas son candidatas ordinarias: pasan
-    # por diagnostico, univariado, relevancia y redundancia como cualquier otra.
-    resultado_fe = feature_engineering_anomalias.ejecutar(df, cfg)
-    df = resultado_fe.dataframe
-    if cfg.usar_feature_engineering:
-        # Regenerar tipos es obligatorio para que todas las features numericas
-        # nuevas sean visibles para las fases existentes.
-        df, tipos = io_utils.tipificar_dataset(df, cfg)
-        barra.avanzar()
 
     # === FASE 0 (identica en ambos flujos) =================================
     diag = fase0_diagnostico.ejecutar(df, cfg, tipos, rep_val)
@@ -1004,12 +943,8 @@ def ejecutar(
         barra.avanzar()
 
         segundos = time.perf_counter() - t0
-        ablacion_fe = feature_engineering_anomalias.construir_ablacion(
-            resultado_fe.catalogo, seleccion_final
-        )
         resumen = _construir_resumen(cfg, df, uni, biv, multi, boruta_meta, rep_val,
-                                     diag["diagnostico"], segundos, reporte_agrupacion,
-                                     resultado_fe.catalogo, ablacion_fe)
+                                     diag["diagnostico"], segundos, reporte_agrupacion)
         embudo = _construir_embudo(df.shape[1], uni, biv, multi, cfg, boruta_meta)
         tabla_final = _construir_seleccion_final(multi, biv, uni, boruta, tipos)
         descartadas = _construir_descartadas(uni, biv, multi)
@@ -1028,8 +963,6 @@ def ejecutar(
             "seleccion_final": tabla_final, "descartadas": descartadas,
             "parametros": pd.DataFrame(cfg.a_filas()), "dependencias": deps_df,
             "variables_seleccionadas": seleccion_final, "segundos": segundos,
-            "feature_engineering_catalogo": resultado_fe.catalogo,
-            "feature_engineering_estabilidad": resultado_fe.estabilidad,
         }
 
     else:
@@ -1051,12 +984,8 @@ def ejecutar(
         }
 
         segundos = time.perf_counter() - t0
-        ablacion_fe = feature_engineering_anomalias.construir_ablacion(
-            resultado_fe.catalogo, seleccion_final
-        )
         resumen = _construir_resumen_no_supervisado(cfg, df, uni, rel, multi, rep_val,
-                                                    diag["diagnostico"], segundos, reporte_agrupacion,
-                                                    resultado_fe.catalogo, ablacion_fe)
+                                                    diag["diagnostico"], segundos, reporte_agrupacion)
         embudo = _construir_embudo_no_supervisado(df.shape[1], uni, rel, multi, cfg)
         tabla_final = _construir_seleccion_final_no_supervisada(multi, tipos)
         descartadas = _construir_descartadas_no_supervisada(uni, rel, multi)
@@ -1075,20 +1004,9 @@ def ejecutar(
             "seleccion_final": tabla_final, "descartadas": descartadas,
             "parametros": pd.DataFrame(cfg.a_filas()), "dependencias": deps_df,
             "variables_seleccionadas": seleccion_final, "segundos": segundos,
-            "feature_engineering_catalogo": resultado_fe.catalogo,
-            "feature_engineering_estabilidad": resultado_fe.estabilidad,
         }
 
     resultados["agrupacion_categorica"] = reporte_agrupacion
-    resultados["feature_engineering_ablacion"] = ablacion_fe
-
-    # La matriz numerica se construye DESPUES de seleccionar, para no arrastrar
-    # variables sin aporte. El preprocesamiento se aprende solo en TRAIN.
-    preparacion = feature_engineering_anomalias.preparar_para_modelos(
-        df, cfg, resultados["variables_seleccionadas"]
-    )
-    resultados["preparacion_modelos"] = preparacion.esquema
-    resultados["ruta_matriz_anomalias"] = preparacion.ruta
 
     # === Exportacion (capa separada, comun a ambos flujos) =================
     # El log se vuelca justo antes de exportar para que la hoja de bitacora
@@ -1113,8 +1031,6 @@ def ejecutar(
     LOGGER.info("# Bitacora: %s", ruta)
     if resultados["ruta_dataset_final"]:
         LOGGER.info("# Dataset final: %s", resultados["ruta_dataset_final"])
-    if resultados.get("ruta_matriz_anomalias"):
-        LOGGER.info("# Matriz IF/VAE: %s", resultados["ruta_matriz_anomalias"])
     LOGGER.info("#" * 78)
 
     return resultados

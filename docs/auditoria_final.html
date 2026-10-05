@@ -64,10 +64,12 @@
 <!-- Data sources / inputs: config.yaml, muestras sinteticas en memoria y CSV temporales.
 Created: 2026-10-04
 Last modified: 2026-10-04
-Changelog: 2026-10-04: tres iteraciones de pruebas, correcciones matematicas y estructura final. -->
+Changelog: 2026-10-04: tres iteraciones de pruebas, correcciones matematicas y estructura final.
+- 2026-10-04: nota de actualizacion tras retirar feature engineering/puestos. -->
 <body><div class="wrap"><h1>Auditoría final: tres iteraciones</h1>
-<p class="subtitle">FeatureSelection · 2026-10-04 · 115 pruebas aprobadas</p>
-<section><h2>Resultado</h2><p>Se validaron cálculos con referencias independientes, decisiones adversarias y salidas reales del pipeline. Se añadieron 24 pruebas a las 91 existentes. KDE permanece apagado en config.yaml, con nombres generales.</p>
+<p class="subtitle">FeatureSelection · 2026-10-04 · 115 pruebas aprobadas en el momento de esta auditoría</p>
+<section><h2>Actualización posterior</h2><p>Después de esta auditoría, el feature engineering temporal/KDE y la estandarización de puestos se retiraron del proyecto (ahora viven en el código base de entrada del usuario). Las 33 pruebas de <code>test_kde_adversarial.py</code>, las 3 de puestos y el caso KDE de fundamentos matemáticos se eliminaron junto con el código que cubrían; la suite actual tiene <strong>38 pruebas</strong>. El resto de este informe —matemáticas, código y estructura no relacionados con KDE/puestos— sigue vigente y se conserva como registro histórico.</p></section>
+<section><h2>Resultado</h2><p>Se validaron cálculos con referencias independientes, decisiones adversarias y salidas reales del pipeline. Se añadieron 24 pruebas a las 91 existentes.</p>
 <p>Las correcciones de VIF y permutaciones pueden cambiar la selección. Con pocas permutaciones, el test puede no tener resolución para rechazar la hipótesis de ruido.</p></section>
 <section><h2>Iteraciones ejecutadas</h2><table>
 <tr><th>Iteración</th><th>Comando</th><th>Resultado</th></tr>
@@ -95,20 +97,16 @@ Changelog: 2026-10-04: tres iteraciones de pruebas, correcciones matematicas y e
 <tr><td>Desempate omitía Gini y trataba scores cercanos como iguales.</td><td>Desempatar solo igualdad exacta de score; luego mayor IV y Gini. Si todo coincide, conservar el orden de entrada.</td></tr>
 <tr><td>Documentación equiparaba Spearman con Somers D.</td><td>Aclarar que Spearman es un sustituto de asociación monótona, no esa equivalencia.</td></tr></table>
 <p>El cuantil de scores permutados es diagnóstico; la decisión usa p &lt; alpha efectivo. La resolución mínima es 1/(B+1); con 200 permutaciones, 1/201.</p></section>
-<section><h2>Estructura final comprobada</h2><ul>
-<li>Con/sin target × FE encendido/apagado; Boruta desactivado para estas corridas.</li>
+<section><h2>Estructura final comprobada (en el momento de la auditoría)</h2><ul>
+<li>Con/sin target, con Boruta desactivado para estas corridas (el caso FE encendido/apagado y las pruebas de IF/VAE se retiraron junto con ese código; ver "Actualización posterior" arriba).</li>
 <li>CSV: conserva filas y orden; columnas id, tiempo, target si existe, seleccionadas y conservadas. Excluidas y roles no entran como candidatas.</li>
 <li>Excel: hoja de relevancia según rama, selección final y encabezados que empiezan por '=' escritos como texto.</li>
-<li>IF/VAE: matriz finita, roles y split temporal; alterar HOLDOUT no modifica TRAIN ni el esquema de transformaciones.</li>
-<li>ConfigPipeline cubre exactamente las claves de config.yaml. El interruptor FE continúa en false.</li></ul></section>
-<section><h2>Flujo final</h2><div class="mermaid">
+<li>ConfigPipeline cubre exactamente las claves de config.yaml.</li></ul></section>
+<section><h2>Flujo final (vigente, sin FE/puestos)</h2><div class="mermaid">
 flowchart TD
- A[config.yaml y dataset] --> B[Excluir columnas y preparar puestos]
+ A[config.yaml y dataset] --> B[Excluir columnas manuales]
  B --> C[Tipificar y validar panel]
- C --> D{FE activo}
- D -->|Sí| E[Temporales y KDE causal]
- D -->|No| F[Diagnóstico y univariado]
- E --> F
+ C --> F[Diagnóstico y univariado]
  F --> G[Agrupación categórica opcional]
  G --> H{Target presente}
  H -->|Sí| I[IV y Gini]
@@ -117,9 +115,6 @@ flowchart TD
  J --> K
  K --> L[Selección y descartes auditados]
  L --> M[Excel y dataset final]
- L --> N{Preparar IF/VAE}
- N -->|Sí| O[Transformaciones aprendidas en TRAIN]
- O --> P[Matriz TRAIN y HOLDOUT]
 </div></section>
 <section><h2>Fuentes y metadatos</h2>
 <p>Fuentes de pruebas: config.yaml, muestras sintéticas en memoria y CSV temporales. No se usaron datos reales.</p>
@@ -128,7 +123,7 @@ flowchart TD
 <p>fase3_multivariado.py: entrada panel y scores de fase 2; creado 2026-08-26, modificado 2026-10-04. Cambios: VIF infinito y desempate IV/Gini.</p>
 <p>fase2_no_supervisado.py: entrada panel, diagnóstico y config.yaml; creado 2026-08-26, modificado 2026-10-04. Cambio: aviso de resolución Monte Carlo con +1.</p>
 <p>Las tres pruebas nuevas se crearon y modificaron el 2026-10-04. Fuentes: muestras en memoria, CSV temporales y config.yaml.</p></section>
-<section><h2>Uso y límites</h2><p>Ejecute <code>py -m pytest -q</code> para repetir la suite. Configure sus columnas únicamente en config.yaml. Para activar KDE, reemplace context_vars y behavior_vars por columnas reales y cambie usar_feature_engineering a true.</p>
-<p>La evidencia valida las fórmulas y contratos cubiertos; no demuestra cobertura exhaustiva ni desempeño de un modelo de anomalías. No se entrenó IF/VAE, ni se hizo evaluación out-of-time sobre datos reales. Boruta y clustering no reciben una validación matemática exhaustiva en esta revisión.</p>
-<p><a href="documentacion.html">Documentación general</a> · <a href="feature_engineering_anomalias.html">KDE</a> · <a href="configuracion_centralizada.html">Configuración</a></p></section>
+<section><h2>Uso y límites</h2><p>Ejecute <code>py -m pytest -q</code> para repetir la suite. Configure sus columnas únicamente en config.yaml.</p>
+<p>La evidencia valida las fórmulas y contratos cubiertos; no demuestra cobertura exhaustiva. Boruta y clustering no reciben una validación matemática exhaustiva en esta revisión.</p>
+<p><a href="documentacion.html">Documentación general</a> · <a href="configuracion_centralizada.html">Configuración</a></p></section>
 </div><script>mermaid.initialize({startOnLoad:true,theme:"dark"});</script></body></html>

@@ -2,8 +2,10 @@
 
 Data sources / inputs: config.yaml y YAML temporales de prueba.
 Created: 2026-10-02
-Last modified: 2026-10-02
+Last modified: 2026-10-04
 Changelog:
+- 2026-10-04: reemplaza los campos de ejemplo del feature engineering
+  retirado por campos equivalentes que siguen existiendo en el esquema.
 - 2026-10-02: verifica precedencia, independencia y opciones del arranque.
 """
 
@@ -21,13 +23,13 @@ from featsel import config
 def test_constructor_y_carga_comparten_fuente(monkeypatch, tmp_path):
     datos = yaml.safe_load(config.CONFIG_PREDETERMINADA.read_text(encoding="utf-8"))
     datos["entradas"]["columna_id"] = "cliente"
-    datos["feature_engineering"]["behavior_vars"] = ["saldo"]
+    datos["entradas"]["columnas_conservadas"] = ["saldo"]
     central = tmp_path / "config.yaml"
     central.write_text(yaml.safe_dump(datos), encoding="utf-8")
     monkeypatch.setattr(config, "CONFIG_PREDETERMINADA", central)
     monkeypatch.chdir(tmp_path.parent)
     assert config.ConfigPipeline().columna_id == "cliente"
-    assert config.cargar_config().behavior_vars == ["saldo"]
+    assert config.cargar_config().columnas_conservadas == ["saldo"]
     datos["entradas"]["columna_id"] = "persona"
     central.write_text(yaml.safe_dump(datos), encoding="utf-8")
     assert config.ConfigPipeline().columna_id == "persona"
@@ -47,11 +49,11 @@ def test_yaml_parcial_cli_y_aliases(tmp_path):
 def test_listas_no_se_comparten():
     primero = config.ConfigPipeline()
     segundo = config.ConfigPipeline()
-    primero.context_vars.append("extra")
-    primero.temporal_windows.append(24)
-    assert "extra" not in segundo.context_vars
-    assert 24 not in segundo.temporal_windows
-    assert config.ConfigPipeline().context_vars == segundo.context_vars
+    primero.columnas_conservadas.append("extra")
+    primero.csv_encodings_fallback.append("cp850")
+    assert "extra" not in segundo.columnas_conservadas
+    assert "cp850" not in segundo.csv_encodings_fallback
+    assert config.ConfigPipeline().columnas_conservadas == segundo.columnas_conservadas
 
 
 def test_yaml_ausente_incompleto_y_repetido(monkeypatch, tmp_path):

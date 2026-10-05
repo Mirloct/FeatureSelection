@@ -10,11 +10,10 @@ Metadata
 Data sources / inputs: ``config.yaml`` y el dataset indicado por
 ``entradas.ruta_dataset``.
 Created: 2026-07-26
-Last modified: 2026-10-02
+Last modified: 2026-10-04
 Changelog:
-- 2026-10-01: se agrego el interruptor CLI del FE temporal/KDE y la salida de
-  la matriz preparada para Isolation Forest/VAE.
-
+- 2026-10-04: se retiro el interruptor CLI del feature engineering temporal/
+  KDE (implementado ahora en el codigo base de entrada del usuario).
 - 2026-10-02: configuracion central antes del logging y bootstrap; se respetan
   ruta_log, nivel_log, autoinstalar_dependencias y usar_boruta del YAML.
 
@@ -86,10 +85,6 @@ def construir_parser() -> argparse.ArgumentParser:
     g.add_argument("--usar-boruta", dest="usar_boruta",
                    help="true / false. Controla la fase 4.")
     g.add_argument("--ruta-salida-excel", dest="ruta_salida_excel")
-    g.add_argument(
-        "--usar-feature-engineering", dest="usar_feature_engineering",
-        help="true / false. Ejecuta temporales + KDE antes de la depuracion.",
-    )
 
     u = p.add_argument_group("Umbrales (opcionales)")
     u.add_argument("--umbral-ceros-nulos", dest="umbral_ceros_nulos", type=float)
@@ -129,7 +124,6 @@ def main() -> int:
             "columna_tiempo": args.columna_tiempo,
             "usar_boruta": _a_bool(args.usar_boruta),
             "ruta_salida_excel": args.ruta_salida_excel,
-            "usar_feature_engineering": _a_bool(args.usar_feature_engineering),
             "umbral_ceros_nulos": args.umbral_ceros_nulos,
             "usar_umbral_alterno": _a_bool(args.usar_umbral_alterno),
             "umbral_correlacion": args.umbral_correlacion,
@@ -209,8 +203,6 @@ def main() -> int:
         print(f"\n  Bitacora Excel   : {resultados['ruta_excel']}")
         if resultados.get("ruta_dataset_final"):
             print(f"  Dataset final    : {resultados['ruta_dataset_final']}")
-        if resultados.get("ruta_matriz_anomalias"):
-            print(f"  Matriz IF / VAE  : {resultados['ruta_matriz_anomalias']}")
         print("=" * 78 + "\n")
         return 0
 

@@ -126,7 +126,8 @@
 <!-- Data sources / inputs: config.yaml y modulos src/featsel.
 Created: 2026-07-26
 Last modified: 2026-10-04
-Changelog: 2026-10-04: enlace a auditoria KDE y mapa de columnas.
+Changelog: 2026-10-04: se retiro el feature engineering temporal/KDE y la
+  estandarizacion de puestos (implementados en el codigo base de entrada).
 - 2026-10-04: fundamentos VIF, Spearman y permutaciones; tres iteraciones de validacion. -->
 <body>
 
@@ -181,12 +182,7 @@ Changelog: 2026-10-04: enlace a auditoria KDE y mapa de columnas.
     <li><a href="#panel">4 · Por qué panel importa</a></li>
     <li><a href="#arquitectura">5 · Arquitectura</a></li>
     <li><a href="#bootstrap">6 · Arranque y dependencias</a></li>
-    <li><a href="#config">7 · Configuración transversal</a>
-      <ol class="sub" style="list-style:none;padding:0">
-        <li><a href="#config-fe-activar">7.1 Activar correctamente FE temporal/KDE</a></li>
-      </ol>
-    </li>
-    <li><a href="#fe-anomalias">7b · Feature engineering temporal y KDE condicional (opcional)</a></li>
+    <li><a href="#config">7 · Configuración transversal</a></li>
     <li><a href="#validacion">8 · Validación de integridad</a></li>
     <li><a href="#fase0">9 · Fase 0 · Diagnóstico</a></li>
     <li><a href="#fase1">10 · Fase 1 · Univariado</a></li>
@@ -1538,8 +1534,6 @@ decidir por el analista.
 <h2>5 · Arquitectura</h2>
 
 <div class="pipeline">
-  <div class="stage"><div class="n">FE</div><div class="t">Temporal + KDE (opcional)</div>
-    <div class="d">Apagado por defecto. Temporales causales y rareza por KDE condicional, antes de todo lo demás. Ver §7b.</div></div>
   <div class="stage"><div class="n">Fase 0</div><div class="t">Diagnóstico</div>
     <div class="d">Perfil de cada columna. No elimina nada: fotografía del punto de partida.</div></div>
   <div class="stage"><div class="n">Fase 1</div><div class="t">Univariado</div>
@@ -1567,7 +1561,6 @@ decidir por el analista.
 <tr><td><code>metricas.py</code></td><td>Estadística pura: WOE, IV, Gini, Cramér, η, VIF, PSI, piso de ruido, clustering de nombres por TF-IDF + K-Means.</td></tr>
 <tr><td><code>fase0…fase4</code></td><td>Una fase por archivo. Devuelven DataFrames, no escriben archivos.</td></tr>
 <tr><td><code>fase1b_agrupacion_categorica.py</code></td><td>Común a ambas ramas: agrupa categóricas de cardinalidad muy alta por similitud de nombre.</td></tr>
-<tr><td><code>feature_engineering_anomalias.py</code></td><td>Opcional, apagado por defecto: temporales causales + KDE condicional + preparación time-safe de matriz IF/VAE.</td></tr>
 <tr><td><code>reporte_excel.py</code></td><td>Solo formatea. Cero lógica de decisión.</td></tr>
 <tr><td><code>pipeline.py</code></td><td>Orquesta y consolida. No calcula métricas.</td></tr>
 </tbody>
@@ -1661,80 +1654,6 @@ propias columnas a partir de la configuración.
 anidadas por legibilidad; se aplanan al cargarlo, de modo que el dataclass no
 necesita conocer esa estructura.</p>
 
-<h3 id="config-fe-activar">7.1 Activar correctamente la rama temporal/KDE</h3>
-
-<p>Esta subsección es la guía operativa (cómo activarlo); la justificación
-estadística de cada decisión de diseño —por qué KDE condicional, por qué el
-diseño causal, cómo se elige el bandwidth, cómo se prepara la matriz para
-Isolation Forest/VAE— vive en <a href="#fe-anomalias">§7b</a>. Existe además
-una versión ilustrada de una sola página con diagrama de flujo en
-<code>docs/feature_engineering_anomalias.html</code>.</p>
-
-<div class="callout warn">
-<strong>El flag no configura las columnas</strong>
-Antes de activar la rama, reemplace los nombres de ejemplo de
-<code>context_vars</code> y <code>behavior_vars</code> por columnas que realmente
-existan en el dataset. El flag de CLI solo cambia el interruptor; el resto de
-los parámetros continúa leyéndose desde <code>config.yaml</code>.
-</div>
-
-<p><strong>Paso 1 — declare la granularidad y el archivo:</strong></p>
-<pre><code>entradas:
-  ruta_dataset: "data/mi_panel.csv"
-  columna_id: "customer_id"
-  columna_tiempo: "month"
-  columna_target: "fraud_flag"  # opcional: su ausencia activa la rama sin target</code></pre>
-
-<p><strong>Paso 2 — declare el perfil comparable y las conductas mensuales:</strong></p>
-<pre><code>feature_engineering:
-  usar_feature_engineering: true
-  context_vars: ["age_group", "job_position"]
-  behavior_vars: ["credit_count", "credit_amount", "account_balance"]
-  incluir_context_vars_en_seleccion: false
-  kernel_type: "gaussian"
-  reference_mode: "joint_and_marginal"
-  min_group_size: 100
-  min_personal_history: 6
-  bandwidth_method: "time_safe_cv"
-  temporal_windows: [3, 6, 12]
-  epsilon: 1.0e-8
-  preparar_modelos_anomalia: true
-  meses_holdout_anomalia: 3</code></pre>
-
-<p>Las variables de <code>behavior_vars</code> deben ser numéricas después de la
-tipificación. Las de <code>context_vars</code> definen estratos comparables; con
-<code>incluir_context_vars_en_seleccion: false</code> no pasan directamente al
-detector, que es la opción recomendada.</p>
-
-<p><strong>Paso 3 — ejecute por una sola de estas vías:</strong></p>
-<pre><code># Activación persistente: usar_feature_engineering=true en config.yaml
-py run_pipeline.py --config config.yaml
-
-# Activación solo para esta corrida: las listas se leen igualmente del YAML
-py run_pipeline.py --config config.yaml --usar-feature-engineering true</code></pre>
-
-<p><strong>Paso 4 — verifique la activación:</strong> la consola debe mostrar
-<code>FE - Temporales y KDE condicional</code> antes de la fase 0; el Excel debe
-incluir las hojas <code>01e_FE_Catalogo</code> a <code>01h_Prep_IF_VAE</code>; y,
-si <code>preparar_modelos_anomalia=true</code>, debe aparecer el archivo con
-sufijo <code>_matriz_anomalias.csv</code>.</p>
-
-<p>La rama se detiene explícitamente si faltan columnas, una conducta no es
-numérica, la llave entidad × mes está duplicada o no existen suficientes
-periodos para separar el holdout. Si un perfil todavía no alcanza
-<code>min_group_size</code>, sus variables KDE quedan nulas hasta reunir historia;
-no se reemplaza silenciosamente por una referencia global.</p>
-
-<p>También se aceptan los alias de configuración <code>id_col</code>,
-<code>time_col</code>, <code>target_col</code> y <code>random_state</code>. Se
-normalizan internamente a <code>columna_id</code>, <code>columna_tiempo</code>,
-<code>columna_target</code> y <code>semilla</code>, respectivamente.</p>
-
-<h3>Puesto del colaborador</h3>
-<p>Antes de tipificar, se detectan las fuentes configuradas. Si hay ambas, se usa <code>despuestocolaborador</code> y se retira <code>desposicioncolaborador</code>. Se crea <code>despuestocolaboradoragrupado</code>, conservado al final junto con la fuente elegida, sin evaluarlos como candidatos.</p>
-<p>La limpieza unifica mayúsculas, tildes, signos, mojibake reversible y abreviaturas habituales. Usa hasta dos palabras para familias/calificadores reconocidos; la primera para otros puestos. Nulos y texto sin palabras usan <code>SIN INFORMACION</code>. El agrupado reemplaza las fuentes en el contexto KDE; otros contextos válidos permanecen. La preparación no activa FE automáticamente.</p>
-<p>Sin fuente, se omite la preparación. CSV reintenta encodings configurados solo ante errores de decoding. Consulte <a href="puestos_colaborador.html">reglas, fallbacks y pruebas de puestos</a>.</p>
-
 <h3>Validación previa</h3>
 <p><code>ConfigPipeline.validar()</code> corre <em>antes</em> de tocar el dataset y
 comprueba: campos obligatorios no vacíos, que las tres columnas de rol sean
@@ -1742,126 +1661,6 @@ distintas entre sí, que no aparezcan en <code>columnas_conservadas</code> ni <c
 que las proporciones estén en (0,1], que el umbral alterno sea efectivamente más
 conservador que el principal, y que los pesos del score sumen algo positivo
 (se renormalizan a 1 y se avisa si no sumaban 1).</p>
-</section>
-
-<!-- ================================================================= -->
-<section id="fe-anomalias">
-<h2>7b · Feature engineering temporal y KDE condicional (opcional)</h2>
-
-<p>Apagado por defecto (<code>usar_feature_engineering: false</code>): con el
-interruptor apagado no se generan features adicionales. Cuando se
-activa, corre <strong>antes</strong> de la fase 0 —común a ambas ramas, no usa
-el target— y genera dos familias de variables candidatas ordinarias a partir
-de cada <code>behavior_var</code> configurada. Guía operativa paso a paso en
-§7.1; esta sección explica el porqué estadístico.</p>
-
-<h3>7b.1 Dos familias, dos nociones complementarias de "inusual"</h3>
-<p>Una observación puede ser rara en dos sentidos distintos, y ninguno
-sustituye al otro:</p>
-<div class="tablewrap">
-<table>
-<thead><tr><th>Familia</th><th>Pregunta que responde</th><th>Referencia</th></tr></thead>
-<tbody>
-<tr><td><strong>TEMPORAL</strong> (lag, diff, media/std/z por ventana)</td>
-<td>¿Es inusual para <em>esta entidad</em>, comparada con su propia historia?</td>
-<td>Solo la entidad misma, desplazada en el tiempo.</td></tr>
-<tr><td><strong>KDE</strong> (−log densidad, rareza bilateral)</td>
-<td>¿Es inusual para <em>el perfil poblacional</em> al que pertenece la entidad?</td>
-<td>Otras entidades con el mismo contexto, en periodos anteriores.</td></tr>
-</tbody>
-</table>
-</div>
-<p>Una entidad puede ser normal para su propia historia pero anómala para su
-perfil poblacional (alguien que empieza a comportarse como el resto de su
-segmento, pero distinto a como se comportaba antes) o al revés (alguien
-consistente consigo mismo pero atípico para su segmento desde el principio).
-Generar ambas evita que la selección tenga que elegir una sola noción de
-"anomalía" antes de ver los datos.</p>
-
-<h3>7b.2 Causalidad estricta: el diseño time-safe</h3>
-<div class="formula">
-fila del mes t:
-  temporal(t)  = f( valores[entidad, t-ventana .. t-1] )      # nunca t
-  kde(t)       = KDE_ajustado_con( referencia[contexto, periodos < t] )
-                 .evaluar( valor[entidad, t] )
-</div>
-<div class="callout why">
-<strong>Por qué esto no es negociable</strong>
-El pecado capital de la detección de anomalías temporales es el
-<em>look-ahead</em>: si una feature del mes <em>t</em> usa, aunque sea
-indirectamente, información de <em>t</em> o de meses posteriores, el modelo
-final parecerá funcionar en backtesting y fallará en producción, donde esos
-datos futuros todavía no existen. Por eso los estadísticos personales se
-calculan sobre <code>shift(1)</code> antes de aplicar cualquier ventana, la
-referencia KDE de un periodo se construye solo con periodos
-estrictamente anteriores, y hasta la validación cruzada del bandwidth
-(§7b.4) respeta el mismo límite. Una prueba dedicada
-(<code>test_primer_mes_y_futuro_no_contaminan_features</code>) verifica que
-alterar el valor del último mes no cambie ni un número de los meses
-anteriores.
-</div>
-
-<h3>7b.3 KDE condicional: por qué no un score de anomalía global</h3>
-<p>La estimación de densidad por kernels (Rosenblatt, 1956,
-<em>"Remarks on Some Nonparametric Estimates of a Density Function"</em>;
-Parzen, 1962, <em>"On Estimation of a Probability Density Function and
-Mode"</em>) estima la densidad de una variable sin asumir una familia
-paramétrica. Ajustar una única KDE sobre toda la población mezclaría
-segmentos heterogéneos: un ingreso "raro" para un jubilado puede ser normal
-para un ejecutivo senior. <code>context_vars</code> define el perfil
-comparable y <code>reference_mode</code> controla el alcance:</p>
-<div class="tablewrap">
-<table>
-<thead><tr><th>Modo</th><th>Referencia</th></tr></thead>
-<tbody>
-<tr><td><code>joint</code></td><td>Todas las <code>context_vars</code> combinadas (perfil exacto: ej. región×segmento).</td></tr>
-<tr><td><code>marginal</code></td><td>Una <code>context_var</code> a la vez (perfil más amplio, más observaciones por grupo).</td></tr>
-<tr><td><code>joint_and_marginal</code> (default)</td><td>Ambas; la fase de selección decide cuál aporta más en cada caso.</td></tr>
-</tbody>
-</table>
-</div>
-<p>Si un perfil no alcanza <code>min_group_size</code> observaciones
-históricas, la feature queda en <code>NaN</code> para esa fila en vez de
-mezclarse con la población global sin avisar: un dato faltante es auditable
-(la fase 1 evalúa su cobertura); una comparación estadísticamente endeble
-disfrazada de número no lo es.</p>
-
-<h3>7b.4 Selección de bandwidth: <code>time_safe_cv</code> frente a Silverman</h3>
-<div class="formula">
-Silverman (1986):  h = 0.9 · min(σ, IQR/1.34) · n^(-1/5)
-</div>
-<p>La regla de Silverman (1986, <em>Density Estimation for Statistics and
-Data Analysis</em>) es un óptimo asintótico bajo normalidad: rápida y sin
-necesitar datos de validación, pero puede sobre-suavizar distribuciones de
-colas pesadas —el caso típico de variables de comportamiento financiero,
-exactamente lo que este módulo analiza—. Por eso el método por defecto,
-<code>time_safe_cv</code>, prueba una grilla de bandwidths
-(<code>bandwidth_grid</code>) y se queda con el que maximiza la
-log-verosimilitud sobre el <strong>último periodo histórico disponible
-dentro de la referencia</strong> (nunca el periodo que se está evaluando):
-es validación cruzada temporal de un solo corte, no k-fold clásico, porque
-mezclar periodos futuros y pasados en los folds violaría la misma causalidad
-del §7b.2. Cuando no hay suficiente historia para ese corte (menos de dos
-periodos distintos en la referencia, o muy pocas filas a cada lado), cae
-automáticamente a Silverman como respaldo — nunca se deja sin bandwidth.</p>
-
-<h3>7b.5 Preparación de la matriz para Isolation Forest / VAE</h3>
-<p>La matriz (<code>preparar_para_modelos</code>) se construye
-<strong>después</strong> de que las fases 1 a 3 (y Boruta, si aplica) ya
-seleccionaron las variables finales, nunca antes: prepararla antes arrastraría
-columnas sin aporte real hasta el modelo de anomalías. El corte
-TRAIN/HOLDOUT es <strong>temporal</strong> (los últimos
-<code>meses_holdout_anomalia</code> periodos, no una muestra aleatoria) por la
-misma razón de causalidad de todo el módulo, y la imputación, la codificación
-por frecuencia de categóricas y el escalado robusto (mediana/IQR) se ajustan
-<strong>únicamente</strong> con las filas de TRAIN — aprenderlos sobre el
-dataset completo filtraría información del HOLDOUT hacia el preprocesamiento,
-el mismo error de fuga que un split aleatorio cometería en cualquier
-problema con estructura temporal. El contrato numérico resultante (sin
-nulos, con <code>split_temporal</code> explícito) sirve por igual a
-Isolation Forest (Liu, Ting y Zhou, ICDM 2008; ver §19.5) y a un VAE con
-pérdida de reconstrucción (An y Cho, 2015; ver §19.5): ninguno de los dos se
-entrena aquí, este módulo solo deja listo el insumo sin fuga.</p>
 </section>
 
 <!-- ================================================================= -->
@@ -2899,9 +2698,9 @@ significa cada campo y reconstruir qué ocurrió en la corrida.
 <li>Se exporta incluso sin seleccionadas cuando hay conservadas presentes. Sin ambas, se omite.</li>
 <li><code>exportar_dataset_final: false</code> omite esta salida. <code>formato_dataset_final</code> acepta CSV o Parquet.</li>
 <li>Si <code>ruta_dataset_final</code> está vacía, se deriva junto al Excel como <code>&lt;bitacora&gt;_dataset_final.&lt;formato&gt;</code>.</li>
-<li>Esta exportación no imputa ni elimina filas. La matriz IF/VAE es otra salida: usa seleccionadas y ajusta el preprocesamiento solo en TRAIN.</li>
+<li>Esta exportación no imputa ni elimina filas.</li>
 </ul>
-<p>Guías: <a href="exclusiones_manuales.html">columnas manuales</a> y <a href="configuracion_centralizada.html">configuración central</a>. Documentación revisada el 2026-10-04. KDE apagado; configure context_vars y behavior_vars en config.yaml. Auditoría final: 115 pruebas aprobadas; <a href="feature_engineering_anomalias.html">correcciones y cobertura KDE</a>. <a href="auditoria_final.html">Tres iteraciones: matemáticas, código y estructura</a>.</p>
+<p>Guías: <a href="exclusiones_manuales.html">columnas manuales</a> y <a href="configuracion_centralizada.html">configuración central</a>. Documentación revisada el 2026-10-04. <a href="auditoria_final.html">Auditoría final: tres iteraciones de matemáticas, código y estructura</a> (38 pruebas tras retirar el feature engineering temporal/KDE y la estandarización de puestos, implementados ahora en el código base de entrada del usuario).</p>
 </section>
 
 <!-- ================================================================= -->

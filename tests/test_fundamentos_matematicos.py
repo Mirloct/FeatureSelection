@@ -4,18 +4,16 @@ Data sources / inputs: muestras sinteticas en memoria y config.yaml.
 Created: 2026-10-04
 Last modified: 2026-10-04
 Changelog:
-- 2026-10-04: primera iteracion; formulas de IV, Gini, PSI, eta, VIF y KDE.
+- 2026-10-04: se retiro la prueba de KDE (feature engineering implementado
+  ahora en el codigo base de entrada del usuario).
+- 2026-10-04: primera iteracion; formulas de IV, Gini, PSI, eta y VIF.
 """
-import math
-
 import numpy as np
 import pandas as pd
 import pytest
 from scipy import sparse
 
 from featsel import metricas as m
-from featsel.config import ConfigPipeline
-from featsel.feature_engineering_anomalias import ejecutar
 
 
 def test_woe_iv_conteos_y_normalizacion():
@@ -95,21 +93,3 @@ def test_laplaciano_energia_por_aristas_e_invariancia():
     L = sparse.csr_matrix(np.diag(d)-S)
     assert m._puntaje_laplaciano_vector(f, d, L) == pytest.approx(expected)
     assert m._puntaje_laplaciano_vector(3*f+10, d, L) == pytest.approx(expected)
-
-
-def test_kde_gaussiana_y_cdf_empirica_contra_formula():
-    df = pd.DataFrame(dict(id=[1, 2, 1, 2], mes=[1, 1, 2, 2],
-                           grupo=["A"]*4, valor=[0., 2., 1., 3.]))
-    cfg = ConfigPipeline(usar_feature_engineering=True, columna_id="id", columna_tiempo="mes",
-                         context_vars=["grupo"], behavior_vars=["valor"], min_group_size=2,
-                         min_personal_history=2, temporal_windows=[2], reference_mode="joint",
-                         bandwidth_method=.5, preparar_modelos_anomalia=False)
-    cfg.validar()
-    result = ejecutar(df, cfg).dataframe
-    # Historia [0,2]: mediana=1, IQR=1; puntos evaluados z=[0,2].
-    for row, z in [(2, 0.), (3, 2.)]:
-        density = np.mean([math.exp(-.5*((z-ref)/.5)**2)/(.5*math.sqrt(2*math.pi))
-                           for ref in [-1., 1.]])
-        assert result.loc[row, "fe__kde__valor__joint__neglog_density"] == pytest.approx(-math.log(density))
-    assert result.loc[2, "fe__kde__valor__joint__tail_rarity"] == pytest.approx(0)
-    assert result.loc[3, "fe__kde__valor__joint__tail_rarity"] == pytest.approx(-math.log(cfg.epsilon))

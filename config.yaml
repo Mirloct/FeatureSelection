@@ -4,13 +4,12 @@
 # Created: 2026-07-26
 # Last modified: 2026-10-04
 # Changelog:
-# - 2026-10-04: comentarios directos y mapa unico de columnas; KDE apagado.
+# - 2026-10-04: se retiro el feature engineering temporal/KDE y la
+#   estandarizacion de puestos (implementados en el codigo base de entrada).
 # - 2026-10-04: documenta resolucion Monte Carlo con correccion +1.
-# - 2026-10-02: deteccion y agrupacion de puestos para contexto KDE y exportacion.
 # - 2026-10-02: listas contiguas para conservar sin analizar o excluir totalmente.
 # - 2026-10-02: exclusiones manuales conservadas al final del dataset exportado.
 # - 2026-10-02: unica fuente de valores; config.py conserva tipos y validacion.
-# - 2026-10-01: configuracion centralizada del FE temporal/KDE y matriz IF/VAE.
 
 # A. ENTRADAS OBLIGATORIAS
 entradas:
@@ -28,14 +27,6 @@ entradas:
   exportar_dataset_final: true
   ruta_dataset_final: ""            # "" -> se deriva junto a ruta_salida_excel
   formato_dataset_final: "csv"      # "csv" | "parquet"
-
-# A2. PUESTOS DE COLABORADOR (deteccion automatica antes del analisis)
-puestos_colaborador:
-  # Fuentes opcionales de puesto; el agrupado se agrega al contexto KDE.
-  usar_estandarizacion_puesto: true
-  columnas_puesto_prioridad: ["despuestocolaborador", "desposicioncolaborador"]
-  columna_puesto_agrupado: "despuestocolaboradoragrupado"
-  puesto_sin_dato: "SIN INFORMACION"
 
 # B. FASE 1 - UNIVARIADO
 univariado:
@@ -121,36 +112,3 @@ ejecucion:
   csv_encoding: "utf-8"
   csv_encodings_fallback: ["utf-8-sig", "cp1252", "latin1"] # solo ante error de decoding
   generar_demo_si_falta: true       # genera demo solo si falta el dataset y la carpeta esta vacia
-
-# G. FEATURE ENGINEERING PARA DETECCION DE ANOMALIAS (PREVIO A LA DEPURACION)
-feature_engineering:
-  # Mantener false hasta reemplazar las dos listas por columnas reales.
-  usar_feature_engineering: false
-
-  # INGRESE AQUI columnas de contexto: edad agrupada, puesto, zona, etc.
-  # Definen grupos comparables; no son las variables cuya rareza se mide.
-  context_vars:
-    - "age_group"
-    - "job_position"
-  # INGRESE AQUI columnas numericas cuya rareza quiere medir: conteos, montos, saldos.
-  # Cada columna genera sus propias features temporales y KDE.
-  behavior_vars:
-    - "credit_count"
-    - "credit_amount"
-    - "account_balance"
-  incluir_context_vars_en_seleccion: false # false: solo definen la poblacion comparable
-
-  # Tipo de kernel; no ingrese nombres de columnas en este parametro.
-  kernel_type: "gaussian"
-  reference_mode: "joint_and_marginal" # joint | marginal | joint_and_marginal
-  min_group_size: 100
-  min_personal_history: 6
-  bandwidth_method: "time_safe_cv"     # time_safe_cv | silverman | numero > 0
-  bandwidth_grid: [0.10, 0.20, 0.35, 0.50, 0.75, 1.00]
-  temporal_windows: [3, 6, 12]
-  epsilon: 0.00000001
-  kde_max_reference_rows: 20000
-
-  preparar_modelos_anomalia: true
-  meses_holdout_anomalia: 3
-  ruta_matriz_anomalias: ""            # "" -> junto al Excel, sufijo _matriz_anomalias.csv

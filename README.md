@@ -4,12 +4,10 @@
 Data sources / inputs: config.yaml y dataset declarado en entradas.ruta_dataset.
 Created: 2026-07-26
 Last modified: 2026-10-04
-Changelog: 2026-10-02 - Preparación de puestos, contexto KDE y fallbacks de encoding.
-2026-10-01 - FE temporal/KDE opcional, matriz time-safe IF/VAE y
-guía paso a paso para activar correctamente la rama.
+Changelog: 2026-10-04 - Se retiro el feature engineering temporal/KDE y la
+estandarizacion de puestos (implementados ahora en el codigo base de entrada).
 2026-10-02 - Exclusiones manuales conservadas al final del dataset final.
 2026-10-02 - Valores centralizados en config.yaml y arranque desde esa fuente.
-2026-10-04 - Auditoria adversaria KDE, validaciones y comentarios directos.
 2026-10-04 - Tres iteraciones: fundamentos, codigo y estructura; VIF y Monte Carlo corregidos.
 -->
 
@@ -24,7 +22,7 @@ automáticamente un **flujo no supervisado** (Laplacian Score + dispersión
 robusta, sin Boruta) pensado para alimentar **Isolation Forest** o un
 **autoencoder variacional (VAE)** — ver sección 9.
 
-> Validación actual: `py -m pytest -q` → **115 pruebas aprobadas** (2026-10-04).
+> Validación actual: `py -m pytest -q` → **38 pruebas aprobadas** (2026-10-04).
 > Tres iteraciones de revisión: matemáticas, código y estructura. [Informe final](docs/auditoria_final.html).
 > Los ejemplos de resultados del demo son históricos y dependen de la configuración.
 
@@ -41,40 +39,8 @@ columnas_excluidas: []   # no analizar ni exportar
 
 Una columna no puede estar en ambas listas, ni ser id, tiempo o target.
 
-## Puesto del colaborador
-
-La preparación está activada por defecto. Si encuentra ambas columnas, usa
-`despuestocolaborador` y retira `desposicioncolaborador`; si encuentra solo una,
-usa esa. Crea **`despuestocolaboradoragrupado`** y conserva la fuente elegida y
-el agrupado al final del dataset, sin evaluarlos como candidatos.
-
-Normaliza mayúsculas, tildes, espacios y signos. Intenta reparar mojibake
-reversible como `TÃ©cnico`; no puede recuperar con certeza letras ya perdidas.
-Usa las dos primeras palabras limpias para reconocer familia/calificador:
-
-| Entrada | Grupo |
-|---|---|
-| `GERENTE`, `GTE`, `Gte`, `GERENTE DE` | `GERENTE` |
-| `gerente adjunto`, `GTEADJ`, `GTE.ADJ` | `GERENTE ADJUNTO` |
-| `asistente de operaciones`, `ASIST` | `ASISTENTE` |
-| `analista senior`, `ANL SR` | `ANALISTA SENIOR` |
-| `vendedor tienda` | `VENDEDOR` |
-| Vacío, nulo, solo signos o números | `SIN INFORMACION` |
-
-El agrupado sustituye los nombres de las columnas fuente en `context_vars` y
-se agrega si no estaban configurados. Los demás contextos se mantienen; el
-placeholder `job_position` se retira si no existe. KDE utiliza este contexto
-**solo cuando `usar_feature_engineering: true`** y `behavior_vars` está configurado
-con conductas numéricas reales. La preparación no activa FE automáticamente.
-
-Opciones en `puestos_colaborador` de `config.yaml`: interruptor, orden de fuentes,
-nombre de salida y etiqueta sin dato. Las exclusiones completas se aplican antes
-de detectar fuentes. Sin fuente, se omite esta preparación y sigue el flujo
-normal; no se inventan columnas para sustituir otra configuración inválida.
 Ante un error de decoding CSV, se prueban `csv_encodings_fallback` y se registra
 el encoding utilizado. Otros errores de archivo conservan su validación.
-
-Vea las [reglas y el diagrama](docs/puestos_colaborador.html).
 
 ## Configuración central
 
@@ -101,7 +67,7 @@ py run_pipeline.py
 
 ### Dónde ingresar los nombres de columnas
 
-Edite solo `config.yaml`. El KDE queda **apagado** y conserva nombres de ejemplo.
+Edite solo `config.yaml`.
 
 | Parámetro | Qué ingresar |
 |---|---|
@@ -111,23 +77,6 @@ Edite solo `config.yaml`. El KDE queda **apagado** y conserva nombres de ejemplo
 | `entradas.columna_target` | Target; si no existe, usa selección no supervisada |
 | `entradas.columnas_conservadas` | Columnas para conservar sin analizar |
 | `entradas.columnas_excluidas` | Columnas para retirar por completo |
-| `feature_engineering.context_vars` | Columnas de grupos comparables: edad agrupada, puesto, zona |
-| `feature_engineering.behavior_vars` | Columnas numéricas cuya rareza quiere medir: conteos, montos, saldos |
-| `puestos_colaborador.columnas_puesto_prioridad` | Fuentes opcionales para agrupar puestos |
-
-Después de reemplazar las listas por columnas reales, active
-`feature_engineering.usar_feature_engineering: true`. `kernel_type` elige el
-kernel; no contiene nombres de columnas. La preparación de puestos agrega el
-puesto agrupado al contexto cuando encuentra una fuente.
-
-Cada conducta genera features temporales y KDE con historia de periodos anteriores.
-`joint` usa el contexto combinado; `marginal`, cada contexto por separado;
-`joint_and_marginal`, ambos. Sin historia suficiente, produce nulos.
-Las features pasan por la selección estadística y pueden descartarse.
-
-El catálogo y la estabilidad se exportan al Excel. Si está habilitada la preparación
-IF/VAE, la matriz usa imputación y escalado aprendidos en TRAIN.
-Vea [la guía de KDE y sus pruebas](docs/feature_engineering_anomalias.html).
 
 Eso es todo. En la primera ejecución el proyecto:
 
@@ -148,8 +97,8 @@ py run_pipeline.py `
     --ruta-salida-excel  outputs/bitacora.xlsx
 ```
 
-Suite de tests (cubre hoy el feature engineering opcional: interruptor
-apagado, no-look-ahead, contrato de la matriz IF/VAE):
+Suite de tests (configuración, columnas manuales, fundamentos matemáticos,
+decisiones adversarias y contratos de pipeline/Excel/CSV):
 
 ```powershell
 py -m pytest tests/ -v
@@ -200,7 +149,6 @@ FeatureSelection/
 │   ├── io_utils.py            ← carga y tipificación de datos
 │   ├── validaciones.py        ← integridad del panel (llave id+tiempo, balance)
 │   ├── metricas.py            ← WOE, IV, Gini, Cramér, VIF, PSI, piso de ruido, clustering de nombres
-│   ├── feature_engineering_anomalias.py ← FE opcional · temporales causales + KDE condicional
 │   ├── fase0_diagnostico.py   ← FASE 0 · diagnóstico inicial
 │   ├── fase1_univariado.py    ← FASE 1 · ceros+nulos y baja variación
 │   ├── fase1b_agrupacion_categorica.py ← FASE 1B · agrupa categóricas de cardinalidad muy alta por nombre
@@ -212,19 +160,24 @@ FeatureSelection/
 │   └── pipeline.py            ← orquestador (bifurca según haya target o no)
 │
 ├── tests/
-│   └── test_feature_engineering_anomalias.py ← causalidad + contrato de la matriz IF/VAE
+│   ├── test_config.py               ← precedencia, independencia y arranque
+│   ├── test_dataset_final.py        ← contrato de columnas manuales
+│   ├── test_estructura_final.py     ← pipeline, Excel y CSV end-to-end
+│   ├── test_fundamentos_matematicos.py ← referencias independientes de cada fórmula
+│   └── test_iteracion_codigo.py     ← decisiones adversarias (VIF, permutaciones, desempates)
 │
 ├── data/
 │   ├── panel_sintetico.csv    ← generado automáticamente (con target)
 │   └── panel_sin_target.csv   ← ejemplo del flujo no supervisado
 ├── docs/
 │   ├── documentacion.html     ← documentación técnica y estadística completa
-│   └── feature_engineering_anomalias.html ← guía ilustrada del FE opcional
+│   ├── configuracion_centralizada.html ← guía de config.yaml como fuente única
+│   ├── exclusiones_manuales.html       ← guía de columnas conservadas/excluidas
+│   └── auditoria_final.html            ← informe de la auditoría matemática/código/estructura
 └── outputs/
     ├── bitacora_feature_selection.xlsx
     ├── bitacora_feature_selection_dataset_final.csv    ← id+tiempo+target + seleccionadas
     ├── bitacora_no_supervisada.xlsx                    ← ejemplo del flujo sin target
-    ├── *_matriz_anomalias.csv                          ← solo si el FE opcional está activo
     └── featsel.log
 ```
 
@@ -238,7 +191,6 @@ capa de exportación — si estuviera ahí, la trazabilidad se rompería.
 
 | Fase | Qué hace **con** target | Qué hace **sin** target (fallback, §9) |
 |---|---|---|
-| **FE** *(opcional, apagado por defecto)* | Temporales causales (lag/diff/media/std/z) + rareza por KDE condicional, antes de todo lo demás. Ver «Activación correcta de la rama de feature engineering» en §1 | Idéntico — no usa el target |
 | **0. Diagnóstico** | Perfil de cada columna: nulos, ceros, percentiles 25/50/75/90/99, únicos, varianza *within*/*between*, ICC | Idéntico — no usa el target |
 | **1. Univariado** | Exceso de ceros+nulos · baja variación (`ceros+nulos ≥ 95%`, std≈0, CV≈0, dominancia ≥99%) | Idéntico — no usa el target |
 | **1B. Agrupación categórica** | Categóricas de cardinalidad muy alta (>100 niveles, sin categoría dominante) se agrupan por similitud de nombre (TF-IDF + K-Means) | Idéntico — no usa el target |
@@ -348,7 +300,7 @@ El dataset **no se trata como transversal**. Se añade:
 
 ---
 
-## 7. El Excel de bitácora (20 hojas con target · 17 sin target; +4 con feature engineering activo)
+## 7. El Excel de bitácora (20 hojas con target · 17 sin target)
 
 | Hoja | Contenido | ¿Solo con target? |
 |---|---|---|
@@ -358,7 +310,6 @@ El dataset **no se trata como transversal**. Se añade:
 | `01b_Diagnostico_General` | Métricas de cabecera del dataset y del panel | No |
 | `01c_Validacion_Panel` | Llave id+tiempo, balance, target | No |
 | `01d_Target_por_Periodo` | Distribución temporal del target | **Sí** |
-| `01e`–`01h` | Feature engineering: catálogo, estabilidad, ablación, preparación IF/VAE | Solo si `usar_feature_engineering=true` |
 | `02_Univariado` | **Todas** las columnas originales con sus flags y motivos | No |
 | `02b_Agrupacion_Categoricas` | Categóricas de cardinalidad muy alta agrupadas por nombre (fase 1B) | Solo si hubo algo que agrupar |
 | `03_Bivariado` | IV, Gini, score compuesto, pisos de ruido, PSI | **Sí** |
@@ -400,8 +351,6 @@ Las variables descartadas por criterios estadísticos quedan fuera del dataset.
 
 Las columnas de `columnas_excluidas` se retiran antes del análisis y no se
 exportan. Si no hay seleccionadas ni conservadas presentes, se omite el archivo.
-La matriz especializada IF/VAE utiliza las seleccionadas, sin agregar las
-columnas transportadas manualmente.
 
 ### Configuración
 
@@ -550,11 +499,14 @@ numpy 2.2.6, scipy 1.16.3, scikit-learn 1.7.2, openpyxl 3.1.5, Boruta 0.4.3.
 
 [`docs/documentacion.html`](docs/documentacion.html) — documentación técnica y
 estadística: definiciones formales, derivaciones (WOE, IV, Gini, V de Cramér,
-VIF, PSI, piso de ruido, clustering de nombres por TF-IDF+K-Means, KDE
-condicional para anomalías), el porqué de cada decisión de diseño, escalas de
-interpretación y limitaciones conocidas. Ábrala en el navegador.
+VIF, PSI, piso de ruido, clustering de nombres por TF-IDF+K-Means), el porqué
+de cada decisión de diseño, escalas de interpretación y limitaciones conocidas.
+Ábrala en el navegador.
 
-[`docs/feature_engineering_anomalias.html`](docs/feature_engineering_anomalias.html)
-— guía ilustrada de una sola página (con diagrama de flujo) específica del
-módulo de feature engineering temporal/KDE opcional; el detalle estadístico
-completo vive en `documentacion.html` §7b.
+[`docs/configuracion_centralizada.html`](docs/configuracion_centralizada.html)
+— guía de `config.yaml` como fuente única de valores.
+[`docs/exclusiones_manuales.html`](docs/exclusiones_manuales.html) — guía de
+`columnas_conservadas`/`columnas_excluidas`.
+[`docs/auditoria_final.html`](docs/auditoria_final.html) — informe de la
+auditoría matemática, de código y de estructura (incluye una nota sobre el
+feature engineering temporal/KDE retirado posteriormente).

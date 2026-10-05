@@ -10,15 +10,13 @@ Data sources / inputs: ``config.yaml`` y overrides de ``run_pipeline.py``.
 Created: 2026-07-26
 Last modified: 2026-10-04
 Changelog:
-- 2026-10-02: opciones centralizadas y validacion de agrupacion de puestos.
+- 2026-10-04: se retiro toda la configuracion de feature engineering temporal/
+  KDE y de estandarizacion de puestos (implementadas ahora en el codigo base
+  de entrada del usuario).
 - 2026-10-02: separa columnas conservadas sin evaluar y excluidas totalmente.
 - 2026-10-02: documenta exclusiones manuales como columnas conservadas al final.
-- 2026-10-01: se centralizo la configuracion de feature engineering temporal,
-  KDE condicional y preparacion time-safe para Isolation Forest/VAE.
-
 - 2026-10-02: valores por defecto exclusivamente en config.yaml; carga estricta
   y construccion directa desde la misma fuente, sin defaults duplicados.
-- 2026-10-04: valida parametros KDE finitos y ventanas enteras sin truncar.
 - 2026-10-04: comentarios de resolucion Monte Carlo con correccion +1.
 
 Edite nombres de columnas, rutas y valores en config.yaml.
@@ -28,7 +26,6 @@ Precedencia: YAML central < YAML alternativo < flags del CLI.
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -44,21 +41,6 @@ CONFIG_PREDETERMINADA = Path(__file__).resolve().parents[2] / "config.yaml"
 # ---------------------------------------------------------------------------
 class ErrorConfiguracion(ValueError):
     """Se lanza cuando la configuracion es invalida o inconsistente."""
-
-
-def _positivo_finito(valor: Any) -> bool:
-    """Valida numeros configurados sin propagar errores de conversion."""
-    try:
-        return not isinstance(valor, bool) and math.isfinite(float(valor)) and float(valor) > 0
-    except (ValueError, TypeError, OverflowError):
-        return False
-
-
-def _ventana_valida(valor: Any) -> bool:
-    try:
-        return _positivo_finito(valor) and float(valor) >= 2 and float(valor).is_integer()
-    except (ValueError, TypeError, OverflowError):
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -262,52 +244,6 @@ class ConfigPipeline:
     #: Si el dataset no existe, generar el panel sintetico de demostracion.
     generar_demo_si_falta: bool
 
-    # =====================================================================
-    # BLOQUE G. Feature engineering para anomalias (opcional, pre-depuracion)
-    # =====================================================================
-    #: Interruptor maestro. Si es False, el pipeline conserva exactamente el
-    #: flujo historico y no exige que existan context_vars/behavior_vars.
-    usar_feature_engineering: bool
-    #: Perfil de comparacion para la KDE. Pueden ser numericas o categoricas;
-    #: los valores se tratan como estratos, sin codificacion ordinal.
-    context_vars: list[str]
-    #: Conductas mensuales analizadas individualmente. Deben ser numericas.
-    behavior_vars: list[str]
-    #: Por defecto el contexto define pares comparables pero no se entrega al
-    #: detector final (evita marcar perfiles demograficos como anomalias).
-    incluir_context_vars_en_seleccion: bool
-    #: Kernels soportados por sklearn.neighbors.KernelDensity.
-    kernel_type: str
-    #: "joint", "marginal" o "joint_and_marginal".
-    reference_mode: str
-    #: Minimo de observaciones historicas dentro del perfil comparable.
-    min_group_size: int
-    #: Observaciones previas de la entidad requeridas para z-scores personales.
-    min_personal_history: int
-    #: "time_safe_cv", "silverman" o un ancho numerico positivo.
-    bandwidth_method: str | float
-    #: Grilla de bandwidth sobre la escala robusta usada por time_safe_cv.
-    bandwidth_grid: list[float]
-    #: Ventanas (meses/observaciones) para estadisticos personales desplazados.
-    temporal_windows: list[int]
-    #: Estabilizador de divisiones, densidades y escalas robustas.
-    epsilon: float
-    #: Tope determinista de referencias por ajuste KDE (0 = sin tope).
-    kde_max_reference_rows: int
-
-    # Preparacion comun para Isolation Forest y VAE. La matriz se genera tras
-    # la seleccion, con imputacion/codificacion/escalado aprendidos SOLO en el
-    # tramo de entrenamiento temporal.
-    preparar_modelos_anomalia: bool
-    meses_holdout_anomalia: int
-    ruta_matriz_anomalias: str
-
-    # Preparacion de puestos previa al diagnostico y al contexto KDE.
-    usar_estandarizacion_puesto: bool
-    columnas_puesto_prioridad: list[str]
-    columna_puesto_agrupado: str
-    puesto_sin_dato: str
-
     def __init__(self, *args: Any, **overrides: Any) -> None:
         """Lee los valores del YAML central y aplica overrides del consumidor.
 
@@ -346,12 +282,7 @@ class ConfigPipeline:
     @property
     def columnas_no_candidatas(self) -> list[str]:
         """Roles reservados + exclusiones explicitas del usuario."""
-        contexto = (
-            list(self.context_vars)
-            if self.usar_feature_engineering and not self.incluir_context_vars_en_seleccion
-            else []
-        )
-        return self.columnas_rol + list(self.columnas_conservadas) + list(self.columnas_excluidas) + contexto
+        return self.columnas_rol + list(self.columnas_conservadas) + list(self.columnas_excluidas)
 
     @property
     def umbral_ceros_nulos_efectivo(self) -> float:
@@ -372,14 +303,6 @@ class ConfigPipeline:
         extension = ".parquet" if self.formato_dataset_final == "parquet" else ".csv"
         return base.with_name(f"{base.stem}_dataset_final{extension}")
 
-    @property
-    def ruta_matriz_anomalias_efectiva(self) -> Path:
-        """Ruta de la matriz numerica time-safe para Isolation Forest/VAE."""
-        if self.ruta_matriz_anomalias.strip():
-            return Path(self.ruta_matriz_anomalias)
-        base = Path(self.ruta_salida_excel)
-        return base.with_name(f"{base.stem}_matriz_anomalias.csv")
-
     def rol_de(self, columna: str) -> str:
         """Clasifica una columna segun su papel en el panel."""
         if columna == self.columna_target:
@@ -392,12 +315,6 @@ class ConfigPipeline:
             return "EXCLUIDA_TOTAL"
         if columna in self.columnas_conservadas:
             return "CONSERVADA_MANUAL"
-        if (
-            self.usar_feature_engineering
-            and not self.incluir_context_vars_en_seleccion
-            and columna in self.context_vars
-        ):
-            return "CONTEXTO_FE"
         return "CANDIDATA"
 
     # ------------------------------------------------------------------
@@ -468,23 +385,6 @@ class ConfigPipeline:
         conflicto = set(self.columnas_conservadas) & set(self.columnas_excluidas)
         if conflicto:
             errores.append(f"Columnas presentes en conservadas y excluidas: {sorted(conflicto)}.")
-        conflicto_fe = set(self.columnas_excluidas) & (set(self.context_vars) | set(self.behavior_vars))
-        if self.usar_feature_engineering and conflicto_fe:
-            errores.append(f"Columnas de feature engineering excluidas totalmente: {sorted(conflicto_fe)}.")
-
-        if self.usar_estandarizacion_puesto:
-            if not self.columnas_puesto_prioridad or any(
-                not isinstance(c, str) or not c.strip() for c in self.columnas_puesto_prioridad
-            ):
-                errores.append("columnas_puesto_prioridad debe contener nombres no vacios.")
-            if not isinstance(self.columna_puesto_agrupado, str) or not self.columna_puesto_agrupado.strip():
-                errores.append("columna_puesto_agrupado debe ser un nombre no vacio.")
-            if not isinstance(self.puesto_sin_dato, str) or not self.puesto_sin_dato.strip():
-                errores.append("puesto_sin_dato debe ser una etiqueta no vacia.")
-            if self.columna_puesto_agrupado in set(roles) | set(self.columnas_excluidas) | set(self.behavior_vars):
-                errores.append("El puesto agrupado no puede ser rol, conducta ni columna excluida.")
-            if self.columna_puesto_agrupado in self.columnas_puesto_prioridad:
-                errores.append("El puesto agrupado debe tener un nombre distinto de las fuentes.")
 
         # --- Rangos de proporciones ---------------------------------------
         for nombre in ("umbral_ceros_nulos", "umbral_ceros_nulos_alterno",
@@ -534,52 +434,6 @@ class ConfigPipeline:
             errores.append(f"motor_boruta='{self.motor_boruta}' no valido (auto|borutapy|borutashap|nativo).")
         if self.formato_dataset_final not in ("csv", "parquet"):
             errores.append(f"formato_dataset_final='{self.formato_dataset_final}' no valido (csv|parquet).")
-
-        # --- Feature engineering de anomalias -----------------------------
-        kernels_validos = {"gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"}
-        if self.kernel_type not in kernels_validos:
-            errores.append(
-                f"kernel_type='{self.kernel_type}' no valido; use uno de {sorted(kernels_validos)}."
-            )
-        if self.reference_mode not in ("joint", "marginal", "joint_and_marginal"):
-            errores.append(
-                f"reference_mode='{self.reference_mode}' no valido (joint|marginal|joint_and_marginal)."
-            )
-        if self.usar_feature_engineering and not self.behavior_vars:
-            errores.append("behavior_vars no puede estar vacio cuando usar_feature_engineering=True.")
-        if self.usar_feature_engineering and not self.context_vars:
-            errores.append("context_vars no puede estar vacio cuando usar_feature_engineering=True.")
-        if len(self.context_vars) != len(set(self.context_vars)):
-            errores.append("context_vars contiene nombres duplicados.")
-        if len(self.behavior_vars) != len(set(self.behavior_vars)):
-            errores.append("behavior_vars contiene nombres duplicados.")
-        choque_fe = set(self.context_vars) & set(self.behavior_vars)
-        if choque_fe:
-            errores.append(f"context_vars y behavior_vars deben ser disjuntas: {sorted(choque_fe)}.")
-        roles_fe = {self.columna_id, self.columna_tiempo, self.columna_target}
-        choque_roles = roles_fe & (set(self.context_vars) | set(self.behavior_vars))
-        if choque_roles:
-            errores.append(
-                "Las columnas de rol no pueden usarse como contexto o conducta (evita identidad/fuga): "
-                f"{sorted(choque_roles)}."
-            )
-        if self.min_group_size < 2:
-            errores.append(f"min_group_size={self.min_group_size} debe ser >= 2.")
-        if self.min_personal_history < 2:
-            errores.append(f"min_personal_history={self.min_personal_history} debe ser >= 2.")
-        if not _positivo_finito(self.epsilon):
-            errores.append(f"epsilon={self.epsilon} debe ser finito y > 0.")
-        if self.kde_max_reference_rows < 0:
-            errores.append("kde_max_reference_rows debe ser >= 0 (0 significa sin limite).")
-        if self.meses_holdout_anomalia < 1:
-            errores.append("meses_holdout_anomalia debe ser >= 1.")
-        if not self.temporal_windows or any(not _ventana_valida(w) for w in self.temporal_windows):
-            errores.append("temporal_windows debe contener enteros >= 2.")
-        if not self.bandwidth_grid or any(not _positivo_finito(x) for x in self.bandwidth_grid):
-            errores.append("bandwidth_grid debe contener valores finitos y positivos.")
-        if (self.bandwidth_method not in ("time_safe_cv", "silverman")
-                and not _positivo_finito(self.bandwidth_method)):
-            errores.append("bandwidth_method debe ser time_safe_cv, silverman o un numero finito positivo.")
 
         # --- Enteros positivos --------------------------------------------
         if self.n_bins < 2:
@@ -632,9 +486,6 @@ class ConfigPipeline:
 
 def _bloque_por_prefijo(nombre: str) -> str:
     """Asigna un bloque legible a cada parametro para la hoja de bitacora."""
-    if nombre in {"usar_estandarizacion_puesto", "columnas_puesto_prioridad",
-                  "columna_puesto_agrupado", "puesto_sin_dato"}:
-        return "A2. Puestos de colaborador"
     if nombre.startswith(("umbral_ceros", "umbral_std", "umbral_cv", "umbral_dominancia",
                           "umbral_iqr", "umbral_alta_cardinalidad", "minimo_valores",
                           "usar_umbral")):
@@ -660,14 +511,6 @@ def _bloque_por_prefijo(nombre: str) -> str:
         return "D. Multivariado"
     if nombre.startswith(("motor_boruta", "boruta_")):
         return "E. Boruta"
-    if nombre in {
-        "usar_feature_engineering", "context_vars", "behavior_vars",
-        "incluir_context_vars_en_seleccion", "kernel_type",
-        "reference_mode", "min_group_size", "min_personal_history", "bandwidth_method",
-        "bandwidth_grid", "temporal_windows", "epsilon", "kde_max_reference_rows",
-        "preparar_modelos_anomalia", "meses_holdout_anomalia", "ruta_matriz_anomalias",
-    }:
-        return "G. Feature engineering de anomalias"
     return "F. Ejecucion"
 
 

@@ -88,8 +88,7 @@ def test_excluidas_se_retiran_antes_del_analisis(monkeypatch):
     df = pd.DataFrame({"id": [1, 2], "mes": [202601, 202602], "target": [0, 1],
                        "nota": ["a", "b"], "secreto": [12, 34], "senal": [1.0, 2.0]})
     cfg = ConfigPipeline(columna_id="id", columna_tiempo="mes",
-                         columnas_conservadas=["nota"], columnas_excluidas=["secreto"],
-                         usar_feature_engineering=False)
+                         columnas_conservadas=["nota"], columnas_excluidas=["secreto"])
     monkeypatch.setattr(pipeline.io_utils, "cargar_dataset", lambda cfg: df)
 
     class DiagnosticoAlcanzado(Exception):

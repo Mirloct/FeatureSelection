@@ -9,8 +9,8 @@ Data sources / inputs: panel configurado en ``config.yaml``.
 Created: 2026-07-26
 Last modified: 2026-10-04
 Changelog:
-- 2026-10-01: exporta el modulo opcional de FE temporal/KDE para anomalias.
-- 2026-10-04: exporta ``puestos`` (preparacion lexica de puestos del colaborador).
+- 2026-10-04: se retiro el feature engineering temporal/KDE y la preparacion
+  de puestos (implementados ahora en el codigo base de entrada del usuario).
 
 Fases
 -----
@@ -29,7 +29,7 @@ logica de EXPORTACION (`reporte_excel.py`). Las fases devuelven DataFrames
 puros; el reporteador solo los formatea.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __all__ = [
     "bootstrap",
     "config",
@@ -38,8 +38,6 @@ __all__ = [
     "validaciones",
     "metricas",
     "fase0_diagnostico",
-    "feature_engineering_anomalias",
-    "puestos",
     "fase1_univariado",
     "fase1b_agrupacion_categorica",
     "fase2_bivariado",

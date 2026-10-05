@@ -140,12 +140,30 @@ def validar_panel(df: pd.DataFrame, cfg: ConfigPipeline) -> ReporteValidacion:
             "ADVERTENCIA",
         )
 
-    # Exclusiones manuales inexistentes: no es bloqueante, pero hay que avisar.
-    exc_inexistentes = [c for c in cfg.columnas_conservadas if c not in df.columns]
-    if exc_inexistentes:
+    # Columnas manuales (conservadas o excluidas) con nombre inexistente: no es
+    # bloqueante, pero hay que avisar -- un nombre mal escrito aqui se ignora
+    # en silencio rio abajo (ver `_exportar_dataset_final`), y esta es la unica
+    # senal visible de que lo que el usuario queria conservar/excluir no se
+    # aplico porque el nombre no coincide con ninguna columna real.
+    conservadas_inexistentes = [c for c in cfg.columnas_conservadas if c not in df.columns]
+    if conservadas_inexistentes:
         rep.agregar(
-            "Columnas excluidas manualmente", "ADVERTENCIA",
-            f"No existen en el dataset y se ignoran: {exc_inexistentes}", "ADVERTENCIA",
+            "Columnas conservadas con nombre inexistente", "ADVERTENCIA",
+            f"No existen en el dataset y se ignoran (no se conservaran en el dataset final): "
+            f"{conservadas_inexistentes}. Revise 'columnas_conservadas' en config.yaml: "
+            "el nombre debe coincidir EXACTO (mayusculas, espacios, acentos) con el encabezado "
+            "del archivo de origen.",
+            "ADVERTENCIA",
+        )
+    excluidas_inexistentes = [c for c in cfg.columnas_excluidas if c not in df.columns]
+    if excluidas_inexistentes:
+        rep.agregar(
+            "Columnas excluidas con nombre inexistente", "ADVERTENCIA",
+            f"No existen en el dataset y se ignoran (no se excluira nada por esta entrada): "
+            f"{excluidas_inexistentes}. Revise 'columnas_excluidas' en config.yaml: "
+            "el nombre debe coincidir EXACTO (mayusculas, espacios, acentos) con el encabezado "
+            "del archivo de origen.",
+            "ADVERTENCIA",
         )
 
     # ------------------------------------------------------------------
